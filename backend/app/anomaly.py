@@ -93,8 +93,13 @@ def _score_from_features(feat: dict) -> float:
 
     score = float(1.0 - np.exp(-max(raw, 0.0)))
 
-    # only refit the healthy envelope while the window looks healthy
-    if score < _HEALTHY_SCORE_CAP:
+    # only refit the healthy envelope while the window looks healthy — i.e. both
+    # low score AND not rms-elevated.  Without the rms gate, a single broadband
+    # event (e.g. the demo's tendon-snap burst, rms >> 100x healthy) inflates
+    # the baseline so the subsequent real damage signature is read as "normal"
+    # for many windows (measured: baseline rms 8.6e-6 -> 5.4e-2 in one window,
+    # then the damage score collapses to ~0 until the tonality overcomes it).
+    if score < _HEALTHY_SCORE_CAP and r_ratio <= _RMS_RATIO_KICK:
         for k in ("tonality", "low_share", "rms"):
             b[k] = (1.0 - _BASELINE_ALPHA) * b[k] + _BASELINE_ALPHA * feat[k]
     return score

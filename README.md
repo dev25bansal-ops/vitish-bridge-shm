@@ -35,6 +35,13 @@ backend/   Python pipeline: simulator, MQTT, Postgres, WebSocket bridge, FastAPI
 models/    Vibration + CV + fusion (train & inference, with demo fallbacks)
 twin/      React Three Fiber digital twin
 vault/     Obsidian knowledge base (open this folder in Obsidian)
-scripts/   Demo driver / orchestration
 data/      Dataset cache (gitignored)
+```
+
+## 6-minute demo
+
+```bash
+cd backend && python app/run_all.py --demo   # simulator + fusion + API + storyboard driver
+# open http://localhost:8000/docs · watch the twin at ws://localhost:8765
+# timeline: 0s healthy GREEN -> 45s crack -> 75s vibration anomaly -> 110s BHI RED -> 140s copilot -> 175s hold
 ```
