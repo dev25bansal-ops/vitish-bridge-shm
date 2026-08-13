@@ -361,9 +361,12 @@ def reset_store() -> None:
         _store = None
 
 
-def attach_recorder(cfg: Settings, bus, store: Store):
+def attach_recorder(cfg: Settings, bus, store: Store, pattern: Optional[str] = None):
     """Subscribe to telemetry on the event bus and persist it.
 
+    ``pattern`` defaults to the hero bridge (``bridge/{cfg.bridge_id}/#``); pass
+    e.g. ``bridge/live-demo/#`` to also record the live public-broker feed into
+    the same store (tagged ``bridge='live-demo'``).
     Returns the bus token so the caller can unsubscribe on shutdown.
     """
     def on_event(topic: str, payload: Any) -> None:
@@ -393,4 +396,4 @@ def attach_recorder(cfg: Settings, bus, store: Store):
         except Exception:
             log.exception("recorder failed on %s", topic)
 
-    return bus.subscribe(f"bridge/{cfg.bridge_id}/#", on_event)
+    return bus.subscribe(pattern or f"bridge/{cfg.bridge_id}/#", on_event)

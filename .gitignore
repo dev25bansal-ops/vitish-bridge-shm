@@ -17,6 +17,10 @@ data/z24/*
 data/cv/*
 !data/cv/.gitkeep
 
+# Real vibration datasets (large; HBTA h5 2.5GB, Z24 under data/z24/)
+data/vib/*
+!data/vib/.gitkeep
+
 # Node / twin
 node_modules/
 twin/dist/

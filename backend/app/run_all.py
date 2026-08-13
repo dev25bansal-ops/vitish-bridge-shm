@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import threading
 import time
@@ -33,12 +34,14 @@ from app import ws_bridge as ws_mod  # noqa: E402
 from app import demo_driver as drv_mod  # noqa: E402
 from app import fusion as fusion_mod  # noqa: E402
 from app import mqtt_client  # noqa: E402
+from app import live_feed as live_mod  # noqa: E402
 
 log = logging.getLogger("run_all")
 
 
 def _banner(cfg: Settings, store, sim: sim_mod.Simulator, demo: bool,
-            api_port: int, ws_port: int) -> None:
+            api_port: int, ws_port: int, live: bool = False,
+            live_feed=None) -> None:
     line = "=" * 64
     print(line)
     print(" VITISH 2026 · PS#99 SHM — backend stack")
@@ -49,11 +52,19 @@ def _banner(cfg: Settings, store, sim: sim_mod.Simulator, demo: bool,
     print(f"    /health")
     print(f"    /api/bridges")
     print(f"    /api/bridges/geojson")
+    print(f"    /api/live              (live MQTT feed status — with --live)")
     print(f"    /api/bridge/{cfg.bridge_id}/history?metric=bhi|rms")
     print(f"    /api/bridge/{cfg.bridge_id}/state")
     print(f"    POST /api/demo/scenario  {{\"scenario\": \"healthy|rupture\"}}")
     print(f" Persistence     : {getattr(store, 'source', 'postgres')}")
     print(f" Data source     : {sim.data_source}")
+    if live and live_feed is not None:
+        st = live_feed.status()
+        live_status = (f"{st['broker']} {'CONNECTED' if st['connected'] else 'waiting'} "
+                       f"({st['received']} rx / {st['published']} pub)")
+    else:
+        live_status = ""
+    print(f" Live MQTT feed  : {'ENABLED (' + live_status + ')' if live else 'disabled (--live)'}")
     print(f" Demo driver     : {'ENABLED (speed %.2fx)' % settings.demo_speed if demo else 'disabled'}")
     print(line, flush=True)
 
@@ -66,12 +77,20 @@ def main(argv=None) -> int:
     parser.add_argument("--rate", type=float, default=1.0, help="simulator speed")
     parser.add_argument("--speed", type=float, default=1.0, help="demo driver speed")
     parser.add_argument("--loops", type=int, default=0, help="simulator 60s segments")
+    parser.add_argument("--live", action="store_true",
+                        help="ingest live public-broker MQTT as bridge='live-demo' "
+                             "(also honored via VITISH_LIVE=1)")
     args = parser.parse_args(argv)
 
     setup_logging()
     cfg = settings
     cfg.demo_speed = args.speed
     bus = events.get_bus()
+
+    # --- optional live public-broker feed (opt-in, fail-soft) -----------------
+    live = args.live or os.environ.get("VITISH_LIVE") == "1"
+    live_feed = None
+    live_recorder_token = None
 
     # --- shared services ------------------------------------------------------
     publisher = mqtt_client.Publisher(cfg)
@@ -87,6 +106,18 @@ def main(argv=None) -> int:
     fusion.start()
 
     recorder_token = db.attach_recorder(cfg, bus, store)
+
+    if live:
+        live_feed = live_mod.LiveFeed(bus)
+        live_mod.set_live_feed(live_feed)
+        live_feed.start()
+        # persist live accel rows too, tagged bridge='live-demo' (source tag in
+        # the payload is the honest provenance marker; never fused into z24 BHI)
+        live_recorder_token = db.attach_recorder(cfg, bus, store,
+                                                 pattern="bridge/live-demo/#")
+        log.info("live feed ENABLED — bridge='live-demo' source='public-mosquitto'")
+    else:
+        live_mod.set_live_feed(None)
 
     ws = ws_mod.WSBridge(cfg, bus)
     ws.start()
@@ -111,7 +142,8 @@ def main(argv=None) -> int:
         driver = drv_mod.DemoDriver(cfg, bus, publisher, timeline="demo",
                                     speed=args.speed)
 
-    _banner(cfg, store, sim, demo=args.demo, api_port=api_port, ws_port=ws_port)
+    _banner(cfg, store, sim, demo=args.demo, api_port=api_port, ws_port=ws_port,
+            live=live, live_feed=live_feed)
 
     sim_thread = threading.Thread(target=sim.run, name="simulator", daemon=True)
     sim_thread.start()
@@ -128,7 +160,7 @@ def main(argv=None) -> int:
         print("\nshutting down backend stack...")
     finally:
         _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher,
-                  bus, recorder_token)
+                  bus, recorder_token, live_feed, live_recorder_token)
     return 0
 
 
@@ -178,13 +210,17 @@ def _run_api(cfg: Settings):
 
 
 def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
-              recorder_token) -> None:
+              recorder_token, live_feed=None, live_recorder_token=None) -> None:
     sim.stop()
     if driver is not None:
         driver.stop()
     ws.stop()
     fusion.stop()
     bus.unsubscribe(recorder_token)
+    if live_recorder_token is not None:
+        bus.unsubscribe(live_recorder_token)
+    if live_feed is not None:
+        live_feed.stop()
     subscriber.stop()
     publisher.stop()
     if api_server is not None:

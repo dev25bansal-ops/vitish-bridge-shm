@@ -33,6 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
+from app import live_feed as live_mod  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import get_store, reset_store  # noqa: E402
 from app.events import get_bus  # noqa: E402
@@ -113,6 +114,17 @@ def create_app() -> FastAPI:
             "nodes": settings.nodes,
             "bridge": settings.bridge_id,
         }
+
+    @app.get("/api/live")
+    def live_status() -> dict:
+        """Live public-broker MQTT ingestion status (bridge='live-demo')."""
+        feed = live_mod.get_live_feed()
+        if feed is None:
+            return {"enabled": False,
+                    "note": "start the stack with --live (or VITISH_LIVE=1)"}
+        st = feed.status()
+        st["hero_bridge_untouched"] = True  # live-demo is never fused into z24 BHI
+        return st
 
     @app.get("/api/bridges")
     def bridges() -> dict:
