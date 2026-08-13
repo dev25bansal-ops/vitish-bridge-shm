@@ -1,91 +1,76 @@
 ---
-tags: [agenda, roadmap, vitish-2026, shm, demo-ready]
+tags: [agenda, roadmap, vitish-2026, shm, build]
 created: 2026-08-13
 updated: 2026-08-13
 status: active
 ---
 
-# 7-Day Roadmap — Build Complete → Demo-Ready
+# 7-Day Build Roadmap — Hackathon is 7 days out, BUILD week
 
-> **State at Day 1 (2026-08-13):** engineering is **DONE and verified**. No new features. These 7 days turn a working build into an **unmissable, unbreakable demo** + the pitch/Q&A/logistics that win points.
+> **Frame:** the event starts ~2026-08-20. One week to build. The vibration/backbone is **done & verified** — this week is for the **one headline gap** (real CV crack detection), one **hardware stretch** (ESP32 real sensor), and demo **polish assets**. The verified demo arc is a **guardrail** — never break it.
 > Anchors: [[Build-Log]] · [[Storyboard]] · [[QandA-Prep]] · [[Metrics]] · [[Pre-Hackathon-Checklist]] · [[36h-Build-Plan]]
 
-## Verified baseline (what we stand on)
+## Honest gap analysis (what this week is really for)
 
-| Asset | Proof |
-|---|---|
-| Demo arc | GREEN 87 → AMBER 67.5 (75s) → RED 49.8 (≈90s) → RED 33.6 (110s), **no flicker**; alerts 45/75/110/140s |
-| Backend | smoke 83/83 |
-| Models | 19/19 (VAE/OCSVM · envelope-floor+push + LSTM-AE, push healthy 0.003 / damage 0.14–0.17) |
-| Twin | production build clean; light theme; toggle-map verified |
-| Data | Z24 full mirror 946 MB; 1530 windows |
-| Infra | Docker MQTT + PostgreSQL, DB user `vitish` |
+| Piece | Status today | Value if built this week |
+|---|---|---|
+| Vibration (LSTM-AE/VAE/OCSVM) | **REAL** — weights + inference, arc verified | done |
+| CV crack detection | **scripted** — `demo_driver.py` fires `cmd:cv 0.30/0.55`; no `crack_seg.pt`, no dataset | **highest** — makes the "Computer Vision" half of PS#99 true |
+| IoT edge (ESP32 + IMU) | **absent** — docs only, no firmware | high, but needs hardware in hand |
+| RUL / predictive maintenance | not built | medium polish |
+| Per-scenario metrics | not generated | medium — Q&A depth |
 
-**Rule for all 7 days:** *Never claim a number or feature stronger than what's in the repo* ([[QandA-Prep]]). Everything below respects that.
-
----
-
-## Day 1 — Harden: make it indestructible
-**Goal:** a demo that survives cold-start, no-network, and a dead laptop.
-
-- **Write the RUNBOOK** at repo root (`RUNBOOK.md`): exact order — `docker compose up -d` → `python -m app.run_all` (or `demo_driver.py`) → `npm run dev` → open `http://localhost:PORT`. Step-by-step, screenshots. *This is the file a stranger uses to run us.*
-- **Offline drill:** kill Wi-Fi, confirm map falls back to SVG ([[Digital-Twin]]), MQTT/PG run local-only.
-- **Capture 2 backup takes** (OBS or phone, 1080p): full arc GREEN→RED, no narration (voice-over later). Store in `backup/demo-2026-08-13/`.
-- **Trim:** grep out debug prints / stray logs that could leak during demo.
-- **Gate:** cold start on a clean clone works in < 5 min with RUNBOOK only.
-
-## Day 2 — Metrics to the front: show ML rigor
-**Goal:** judges see *measured* evidence, not a single F1.
-
-- **Generate + commit assets** (see [[Metrics]]): confusion matrix by Z24 scenario, threshold-vs-FPR curve, per-class precision/recall, latency table (streaming ~200 ms; detection ~10.5 s + inference). Script them under `scripts/eval_*.py` so they re-run on demand.
-- **Pin 3 dashboard stills** from the live arc (GREEN / AMBER / RED) for the pitch deck + backup slides.
-- **Gate:** every number on the asset sheet maps to a command in the repo (reproducible).
-
-## Day 3 — Pitch: deck, one-pager, 5-min script
-**Goal:** 60 seconds to make a judge lean in.
-
-- **10-slide idea PPT** ([[Pre-Hackathon-Checklist]]): Problem → IoT+CVA+Twin → BHI auditability → Demo screens → Cost table ([[Metrics]] #9) → Roadmap → Team.
-- **One-paragraph description** + **solution PPT** (same checklist).
-- **Turn [[Storyboard]] into a timed 5-minute walk-through**: which clicks, when, what you say. Assign one owner.
-- **Gate:** pitch run-through in < 60 s; demo script under 5:00.
-
-## Day 4 — Q&A rehearsal + compliance (human items)
-**Goal:** nothing to panic-email on the day.
-
-- **Q&A rehearsal:** 2 owners run the full [[QandA-Prep]] (12 answers) cold; mark weak spots; one answer per weak spot.
-- **Roster:** finalize 6 members incl. ≥ 1 female (compliance).
-- **Email organizers** for the VITISH scoring rubric/scorecard — know *how we're judged*.
-- **KU Leuven registration** (license story — Q4 in [[QandA-Prep]]).
-- **Z24 verification:** one command re-downloads/mirrors if the 946 MB is ever lost.
-- **ESP32 decision gate:** it's already cut from the build — **keep it cut**, listed as future work. Do not resurrect 48h before an event.
-- **Gate:** 12/12 answers pass cold; roster + registrations done.
-
-## Day 5 — Full dress rehearsal (recorded)
-**Goal:** the live show, end to end, on the real laptop.
-
-- Full stack cold start → demo arc → map toggle → sensor popup → collapse → panels. **Timed.**
-- **Backup take 3** recorded here (the best one).
-- Simulate a failure: kill a container mid-demo; confirm recovery story (this becomes a Q&A answer).
-- **Gate:** one clean 5-min run, recorded, no dead air.
-
-## Day 6 — Venue readiness + repo hygiene
-**Goal:** arrive with nothing to fix on site.
-
-- **Venue dry-run:** projector resolution (720p/1080p — resize HUD if needed), audio, HDMI, second laptop as live-cam for the audience.
-- **Network plan:** tiles need internet; MQTT/PG local. Know which is which.
-- **Repo hygiene:** commit all Day 1–5 assets, `git tag release-2026-08-13`, `package-lock`/`requirements.txt` pinned, weights confirmed (lstm_ae.pt, vae.pt, ocsvm.pkl, scaler.pkl).
-- **Gate:** `git status` clean; tag present; venue checklist ticked.
-
-## Day 7 — FREEZE + day-before checklist
-**Goal:** no surprises; sleep.
-
-- **Demo freeze:** no feature changes, only bugfixes if a *judged* risk surfaces. Every change re-runs the full arc smoke.
-- **Run [[Pre-Hackathon-Checklist]] top to bottom** — tick every box.
-- **Pack:** laptop, charger, HDMI adapter, phone/stand for live-cam, backup drive, printed RUNBOOK + scorecard email + roster.
-- **36h briefing:** reread [[36h-Build-Plan]] as a team; assign Phase 0 roles so the first 2 hours of the event are instinct.
+**Guardrail (all week):** the verified arc GREEN 87 → AMBER 67.5 → RED 33.6 + no-flicker must hold after every change. Run `scripts/smoke_arc` (or the demo driver smoke) before calling any day done.
 
 ---
 
-## What this does NOT include (deliberately)
-- **No new features** after Day 1 (ESP32, extra sensors, more scenarios). The build is complete; additions now only add risk.
+## Day 1 — Freeze baseline + CV data pipeline
+- **Freeze & tag the verified build:** `git tag arc-verified-2026-08-13`. Any future change is measured against this.
+- **Bring up CV data:** `python models/cv/prep_sdnet.py --dataset ultralytics` → downloads crack-seg (~92 MB) → builds `data/cv/yolo/` + auto `data.yaml`.
+- **Sanity-train 3 epochs** — prove the loop runs, watch loss move, confirm `best.pt` lands.
+- **Gate:** `crack-seg` present, one short training run completes end-to-end.
+
+## Day 2 — Train real CV weights
+- Train `yolov8s-seg` (or yolo11s/yolo26s via `--model auto`), ~30–50 epochs @ imgsz 512 on the GPU/CPU budget available.
+- **Canonical output:** `models/weights/crack_seg.pt` (train_yolo copies it there).
+- Produce **mAP@0.5 / F1 / precision / recall** on the held-out split → this becomes a [[Metrics]] asset.
+- Verify `models/cv/inference.py` runs in **real mode** (`mode: yolo`) on test frames, not the heuristic.
+- **Gate:** `crack_seg.pt` exists; a test frame yields real segment(s); metric numbers recorded honestly.
+
+## Day 3 — Wire REAL cv into the live demo
+- Curate **3–6 demo crack frames** (from the val split) into `data/cv/demo-frames/`.
+- Add a small **`cv_feed`** service/bridge: at the storyboard's t=45 (→ cv 0.30) and t=85 (→ cv 0.55) moments, run the real image through `inference.py`, map detection area/confidence → cv evidence value, and emit it on the **existing** `control/cmd cv` path ([[contract.py]] already consumes it — no contract change).
+- Keep the scripted value **only as fallback** if inference errors. Demo never hangs.
+- **Re-verify the full arc** with real CV feeding `cv` — numbers must match [[Storyboard]] (within honest tolerance) and no flicker.
+- **Gate:** live demo shows "CV: real detection" evidence; arc smoke green.
+
+## Day 4 — ESP32 real sensor (parallel, hard-gated)
+- **Only if a board is in hand** (ESP32 + MPU6050/ADXL345 ≈ $10–15). Build `firmware/`: read accel @ ~100 Hz, publish `sensors/z24/.../accel` over MQTT (same topic as simulator so the backend is agnostic).
+- Lab: one IMU channel replaces one simulated channel at demo time → "real hardware in the loop."
+- **Hard gate:** if no parts by end of Day 4 → **cut**, document as future work in [[Key-Decisions]]. Do NOT let hardware threaten the demo.
+- **Gate:** real packets visible on the MQTT topic, backend consumes them.
+
+## Day 5 — RUL + metrics assets (polish)
+- **RUL / predictive maintenance:** remaining-life projection on the BHI trend (linear/AR on the verified trend), shown as a band in [[HealthPanel]] — small, self-contained.
+- **Per-scenario confusion matrix** (settlement/spalling/hinge/anchor/tendon) from the Z24 mirror → [[Metrics]] asset ([[QandA-Prep]] Q7 depth).
+- Package demo-frames + metric sheet into the pitch folder.
+- **Gate:** RUL renders with real trend; matrix reproducible from one command.
+
+## Day 6 — Full dress rehearsal (real CV + real sensor if landed)
+- Cold start → full arc with **real CV** → map toggle → sensor popup → collapse → RUL. **Timed, recorded** (backup takes).
+- Simulate failure (kill a container mid-demo) → recovery answer.
+- **RUNBOOK.md** at repo root; `git tag release-2026-08-13`; pins + weights confirmed (`lstm_ae.pt, vae.pt, ocsvm.pkl, scaler.pkl, crack_seg.pt`).
+- **Gate:** one clean 5-min run; `git status` clean.
+
+## Day 7 — FREEZE
+- **Demo freeze** — bugfixes only; every fix re-runs the arc smoke.
+- Run [[Pre-Hackathon-Checklist]] top-to-bottom: roster (6 incl. ≥1 female), organizer scorecard email, KU Leuven registration, Z24 one-command mirror check.
+- Pack: laptop, charger, HDMI, live-cam phone, backup drive, printed RUNBOOK.
+- **Gate:** every box ticked; no uncommitted code.
+
+---
+
+## What we are NOT doing this week
+- **No new vibration models / new scenarios** — vibration is done; touching it risks the arc.
+- **No expanding the fleet / new UI panels** unless Day 5's RUL lands clean.
 - **No unverifiable claims** in deck or answers ([[QandA-Prep]] rule).
