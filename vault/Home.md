@@ -40,7 +40,8 @@ tags: [home, vitish-2026, shm]
 
 - ✅ Research (12-agent workflow) complete
 - ✅ Master build plan written
-- 🔨 **Build in progress** — see [[Build-Log]]
+- ✅ **Build + integration verified** — see [[Build-Log]]
+- 🔜 Demo rehearsal + stretch training
 
 ---
 

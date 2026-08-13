@@ -1,0 +1,127 @@
+"""
+VITISH 2026 · PS#99 SHM — vibration anomaly interface.
+
+The rest of the backend calls ONE stable function::
+
+    score, uncertainty = get_anomaly(window, fs=100)
+
+    * window      : numpy array of 1024 accelerations (m/s^2)
+    * score       : float in [0, 1], higher = more anomalous
+    * uncertainty : float in [0, 1] (band around the anomaly evidence)
+
+When the ML agent ships real weights at ``models/vibration/demo_predictor.py``
+exposing the same signature, this module auto-delegates to it.  Until then (or
+if that module is missing/broken) a *deterministic spectral heuristic* is used:
+
+  1. 1/f-normalised PSD of the window (0.5-20 Hz band)
+  2. features: peak-to-mean "tonality", low-band (2-8 Hz) energy share, RMS
+  3. baseline = EMA of features over windows that look healthy (score < 0.35)
+  4. score = 1 - exp(-raw), where raw grows with tonality/low-band deviation
+     and with RMS exceeding ~1.5x the healthy baseline.
+
+A strong tonal ~4 Hz + harmonics (the synthetic tendon-rupture signature) makes
+``tonality`` explode, so the score reliably climbs toward ~0.9 on damage while
+hovering near ~0.05-0.15 on healthy traffic.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Tuple
+
+import numpy as np
+
+log = logging.getLogger(__name__)
+
+_BAND_MIN = 0.5
+_BAND_MAX = 20.0
+_LOW_MIN = 2.0
+_LOW_MAX = 8.0
+_SCALE_TONALITY = 25.0
+_SCALE_LOW_SHARE = 0.30
+_RMS_RATIO_KICK = 1.5
+_HEALTHY_SCORE_CAP = 0.35
+_BASELINE_ALPHA = 0.05
+
+# deterministic per-process baseline (reset-able for tests / live re-fit)
+_baseline = None  # {"tonality": float, "low_share": float, "rms": float}
+
+
+def reset_anomaly_baseline() -> None:
+    """Clear the healthy reference envelope (used by tests and live re-fit)."""
+    global _baseline
+    _baseline = None
+
+
+def _features(arr: np.ndarray, fs: int) -> dict:
+    x = arr - float(np.mean(arr))
+    n = len(x)
+    spec = np.fft.rfft(x)
+    freqs = np.fft.rfftfreq(n, d=1.0 / fs)
+    power = np.abs(spec) ** 2
+    band = (freqs >= _BAND_MIN) & (freqs <= _BAND_MAX)
+    pb, fb = power[band], freqs[band]
+    total = float(pb.sum()) + 1e-12
+    peak = float(pb.max()) if pb.size else 0.0
+    mean = float(pb.mean()) + 1e-12
+    tonality = peak / mean
+    low = (fb >= _LOW_MIN) & (fb <= _LOW_MAX)
+    low_share = float(pb[low].sum() / total) if low.any() else 0.0
+    return {
+        "tonality": tonality,
+        "low_share": low_share,
+        "peak_f": float(fb[np.argmax(pb)]) if pb.size else 0.0,
+        "rms": float(np.sqrt(np.mean(x ** 2))),
+    }
+
+
+def _score_from_features(feat: dict) -> float:
+    global _baseline
+    if _baseline is None:
+        _baseline = {
+            "tonality": feat["tonality"],
+            "low_share": feat["low_share"],
+            "rms": max(feat["rms"], 1e-9),
+        }
+    b = _baseline
+    d_ton = max(0.0, feat["tonality"] - b["tonality"])
+    d_share = max(0.0, feat["low_share"] - b["low_share"])
+    r_ratio = feat["rms"] / max(b["rms"], 1e-9)
+
+    raw = 0.55 * (d_ton / _SCALE_TONALITY) + 0.25 * (d_share / _SCALE_LOW_SHARE)
+    if r_ratio > _RMS_RATIO_KICK:
+        raw += 0.20 * (1.0 - np.exp(-(r_ratio - _RMS_RATIO_KICK)))
+
+    score = float(1.0 - np.exp(-max(raw, 0.0)))
+
+    # only refit the healthy envelope while the window looks healthy
+    if score < _HEALTHY_SCORE_CAP:
+        for k in ("tonality", "low_share", "rms"):
+            b[k] = (1.0 - _BASELINE_ALPHA) * b[k] + _BASELINE_ALPHA * feat[k]
+    return score
+
+
+def _spectral_heuristic(window: np.ndarray, fs: int = 100) -> Tuple[float, float]:
+    feat = _features(window, fs)
+    score = _score_from_features(feat)
+    uncertainty = float(min(0.40, 0.03 + 0.28 * score))
+    return score, uncertainty
+
+
+def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
+    """Return (score, uncertainty) for one 1024-sample window.
+
+    Delegates to ``models.vibration.demo_predictor.get_anomaly`` when the ML
+    agent ships it; otherwise the deterministic spectral heuristic above.
+    """
+    arr = np.asarray(window, dtype=np.float64).reshape(-1)
+    if arr.size < 64:
+        return 0.0, 0.05
+
+    try:
+        from models.vibration import demo_predictor  # type: ignore[import-not-found]
+        if hasattr(demo_predictor, "get_anomaly"):
+            return demo_predictor.get_anomaly(arr, fs=fs)
+    except Exception as exc:  # pragma: no cover - depends on models agent
+        log.debug("real predictor unavailable, using spectral heuristic (%s)", exc)
+
+    return _spectral_heuristic(arr, fs)

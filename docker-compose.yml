@@ -1,8 +1,6 @@
 # VITISH 2026 · PS#99 SHM — one-command stack (replay-first demo, no venue WiFi dependency)
 #   docker compose up -d --build
-# Then: python backend/app/simulator.py   (or via demo_driver)
-#       python backend/app/api.py         (FastAPI + WebSocket bridge)
-version: "3.9"
+# Then: python backend/app/run_all.py     (simulator + WS + API in one process)
 
 services:
   mqtt:

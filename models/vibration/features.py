@@ -48,6 +48,7 @@ def periodogram(x: np.ndarray, fs: float = 100.0) -> tuple[np.ndarray, np.ndarra
     x = x - x.mean()                      # remove DC (constant detrend)
     win = np.hanning(n)
     xw = x * win
+    xw = xw - xw.mean()                   # residual DC after windowing -> exact bin-0
     X = np.fft.rfft(xw)
     # Normalize so that the integral of PSD over f equals the windowed variance.
     psd = (np.abs(X) ** 2) / (fs * np.sum(win ** 2))

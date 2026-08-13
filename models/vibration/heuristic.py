@@ -56,6 +56,7 @@ class HeuristicAnomalyScorer:
         self.n_healthy_max = int(n_healthy_max)
         self.rms_trigger_rel = float(rms_trigger_rel)
         self.rms_trigger_sigma = float(rms_trigger_sigma)
+        self._win_n = 1024  # original time-domain length (updated on feed)
         self._psds: list[np.ndarray] = []
         self._rmss: list[float] = []
         self._template_mean: np.ndarray | None = None
@@ -72,6 +73,7 @@ class HeuristicAnomalyScorer:
         window = np.asarray(window, dtype=np.float64).ravel()
         if window.size == 0:
             return
+        self._win_n = window.size
         f, p = periodogram(window, self.fs)
         self._psds.append(p)
         self._rmss.append(rms(window))
@@ -84,7 +86,8 @@ class HeuristicAnomalyScorer:
         if self.n_healthy >= _MIN_HEALTHY:
             d_health = np.array([self._spectral_distance(p) for p in self._psds])
             self._d_med = float(np.median(d_health))
-            self._d_scale = max(float(np.std(d_health)) or self._d_med, 0.05)
+            # floor the scale so single-window PSD noise can't make it collapse
+            self._d_scale = max(float(np.std(d_health)), 0.20 * self._d_med, 0.05)
 
     def _rebuild_template(self) -> None:
         if not self._psds:
@@ -96,7 +99,8 @@ class HeuristicAnomalyScorer:
 
     # ------------------------------------------------------------- distances
     def _freq_mask(self, n_bins: int) -> np.ndarray:
-        freqs = np.fft.rfftfreq(n_bins, d=1.0 / self.fs)
+        # rfftfreq expects the TIME-domain length (win_n); the PSD has n_bins = win_n//2 + 1
+        freqs = np.fft.rfftfreq(self._win_n, d=1.0 / self.fs)[:n_bins]
         return freqs >= _SPECTRAL_FLOOR
 
     def _spectral_distance(self, psd: np.ndarray) -> float:
@@ -112,7 +116,7 @@ class HeuristicAnomalyScorer:
         diff = logp - logt
         lsd = float(np.sqrt(np.mean(diff ** 2)))
         # structural band 0.5-10 Hz emphasises bridge modal changes
-        freqs = np.fft.rfftfreq(psd.size, d=1.0 / self.fs)
+        freqs = np.fft.rfftfreq(self._win_n, d=1.0 / self.fs)[:psd.size]
         band = (freqs[mask] >= _BAND_LO) & (freqs[mask] <= _BAND_HI)
         low_lsd = float(np.sqrt(np.mean(diff[band] ** 2))) if np.any(band) else lsd
         return 0.55 * lsd + 0.35 * low_lsd
@@ -133,13 +137,12 @@ class HeuristicAnomalyScorer:
         base = max(self._base_rms, np.median(self._rmss) if self._rmss else 0.0)
         rms_dev = abs(cur_rms - base) / max(base, _EPS)
 
-        # composite distance, then self-calibrated monotone map
+        # composite distance, then self-calibrated z-score + sigmoid mapping.
+        # z=0 is the median healthy window; damage must push well past z>~2.
         d = d + 0.6 * min(rms_dev, 2.0)
-        excess = d - self._d_med
-        k = self._d_scale
-        score = _HEALTHY_SCORE_FLOOR + (1.0 - _HEALTHY_SCORE_FLOOR) * (
-            excess / (excess + k) if excess > 0 else 0.0
-        )
+        z = (d - self._d_med) / max(self._d_scale, 1e-9)
+        frac = 1.0 / (1.0 + np.exp(-(z - 1.0) / 0.5))  # sigmoid(0) ~ 0.5 at z=1
+        score = _HEALTHY_SCORE_FLOOR + (1.0 - _HEALTHY_SCORE_FLOOR) * frac
 
         # uncertainty: baseline maturity + spectral entropy + template variability
         maturity = float(min(1.0, self.n_healthy / 10.0))
