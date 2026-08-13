@@ -1,0 +1,36 @@
+# VITISH 2026 · PS#99 SHM — one-command stack (replay-first demo, no venue WiFi dependency)
+#   docker compose up -d --build
+# Then: python backend/app/simulator.py   (or via demo_driver)
+#       python backend/app/api.py         (FastAPI + WebSocket bridge)
+version: "3.9"
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: vitish-mqtt
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # MQTT over WebSocket (twin fallback)
+    volumes:
+      - ./docker-data/mosquitto/data:/mosquitto/data
+      - ./docker-data/mosquitto/log:/mosquitto/log
+      - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: vitish-db
+    environment:
+      POSTGRES_USER: vitish
+      POSTGRES_PASSWORD: vitish
+      POSTGRES_DB: shm
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker-data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vitish -d shm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped

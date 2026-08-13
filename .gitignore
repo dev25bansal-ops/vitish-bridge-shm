@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.npy
+*.npz
+*.pt
+*.onnx
+!models/weights/.gitkeep
+data/z24/*
+!data/z24/.gitkeep
+
+# Node / twin
+node_modules/
+twin/dist/
+twin/.vite/
+
+# Docker
+docker-data/
+
+# Secrets / env
+.env
+*.env.local
+
+# Obsidian
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.trash/
+
+# Research scratch (kept locally, not committed)
+*.json
+!docker-compose.yml
+!package.json
+
+# OS
+Thumbs.db
+.DS_Store
