@@ -44,12 +44,12 @@ export function TwinCanvas() {
       frameloop="always"
       camera={{ position: [118, 52, 172], fov: 42, near: 0.5, far: 4000 }}
     >
-      <color attach="background" args={['#0b0f14']} />
-      <fog attach="fog" args={['#0b0f14', 420, 1400]} />
+      <color attach="background" args={['#dce9f2']} />
+      <fog attach="fog" args={['#dce9f2', 420, 1400]} />
 
-      <ambientLight intensity={0.55} color="#cdd9e6" />
-      <directionalLight position={[90, 140, 70]} intensity={1.25} color="#e8f1f7" />
-      <directionalLight position={[-120, 60, -80]} intensity={0.35} color="#7fa8cc" />
+      <ambientLight intensity={0.75} color="#ffffff" />
+      <directionalLight position={[90, 140, 70]} intensity={1.35} color="#fff6e8" />
+      <directionalLight position={[-120, 60, -80]} intensity={0.5} color="#d8e8f5" />
 
       <MorbiBridge scenario={scenario} collapseEpoch={collapseEpoch} />
       <SensorMarkers />

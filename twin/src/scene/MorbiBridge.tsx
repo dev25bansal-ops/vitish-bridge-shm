@@ -203,7 +203,7 @@ export const MorbiBridge = memo(function MorbiBridge({
       {/* river */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.6, -60]}>
         <planeGeometry args={[1000, 720]} />
-        <meshStandardMaterial color="#0b131c" roughness={0.95} />
+        <meshStandardMaterial color="#3b7ea0" roughness={0.95} />
       </mesh>
     </group>
   )

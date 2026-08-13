@@ -36,20 +36,20 @@ function Gauge({ value, u, state }: { value: number; u: number; state: HealthSta
   const lo = angleOf(Math.max(0, value - u))
   const hi = angleOf(Math.min(100, value + u))
   const stateColor =
-    state === 'GREEN' ? '#22c55e' : state === 'AMBER' ? '#f59e0b' : '#ef4444'
+    state === 'GREEN' ? '#16a34a' : state === 'AMBER' ? '#d97706' : '#dc2626'
 
   return (
     <svg viewBox="0 0 160 152" className="gauge">
-      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#1a242e" strokeWidth={13} />
-      <path d={arcPath(CX, CY, R, -120, 0)} fill="none" stroke="#ef4444" strokeWidth={13} strokeLinecap="butt" />
-      <path d={arcPath(CX, CY, R, 0, angleOf(70))} fill="none" stroke="#f59e0b" strokeWidth={13} strokeLinecap="butt" />
-      <path d={arcPath(CX, CY, R, angleOf(70), 120)} fill="none" stroke="#22c55e" strokeWidth={13} strokeLinecap="butt" />
+      <circle cx={CX} cy={CY} r={R} fill="none" stroke="#e2e8f0" strokeWidth={13} />
+      <path d={arcPath(CX, CY, R, -120, 0)} fill="none" stroke="#dc2626" strokeWidth={13} strokeLinecap="butt" />
+      <path d={arcPath(CX, CY, R, 0, angleOf(70))} fill="none" stroke="#d97706" strokeWidth={13} strokeLinecap="butt" />
+      <path d={arcPath(CX, CY, R, angleOf(70), 120)} fill="none" stroke="#16a34a" strokeWidth={13} strokeLinecap="butt" />
       <path d={arcPath(CX, CY, R - 9, -120, 120)} fill="none" stroke="#00000022" strokeWidth={1} />
       {u > 0 && (
-        <path d={arcPath(CX, CY, R + 10, lo, hi)} fill="none" stroke="#38bdf8" strokeWidth={4} strokeOpacity={0.55} strokeLinecap="round" />
+        <path d={arcPath(CX, CY, R + 10, lo, hi)} fill="none" stroke="#0d9488" strokeWidth={4} strokeOpacity={0.55} strokeLinecap="round" />
       )}
-      <line x1={CX} y1={CY} x2={nx} y2={ny} stroke="#e2e8f0" strokeWidth={2.5} strokeLinecap="round" />
-      <circle cx={CX} cy={CY} r={4.5} fill="#e2e8f0" />
+      <line x1={CX} y1={CY} x2={nx} y2={ny} stroke="#0f172a" strokeWidth={2.5} strokeLinecap="round" />
+      <circle cx={CX} cy={CY} r={4.5} fill="#0f172a" />
       <text x={CX} y={CY - 6} textAnchor="middle" className="gauge-value">{value.toFixed(1)}</text>
       <text x={CX} y={CY + 14} textAnchor="middle" className="gauge-u">±{u.toFixed(1)}</text>
       <text x={CX} y={CY + 42} textAnchor="middle" className="gauge-state" fill={stateColor}>{state}</text>
@@ -125,23 +125,23 @@ export const HealthPanel = memo(function HealthPanel() {
             <AreaChart data={trendData} margin={{ top: 6, right: 2, left: 2, bottom: 0 }}>
               <defs>
                 <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.5} />
-                  <stop offset="100%" stopColor="#38bdf8" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#0d9488" stopOpacity={0.5} />
+                  <stop offset="100%" stopColor="#0d9488" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <XAxis dataKey="i" hide />
               <YAxis domain={[0, 100]} hide />
               <Tooltip
-                contentStyle={{ background: '#10161d', border: '1px solid #22303c', fontSize: 11 }}
-                labelStyle={{ color: '#7c8ea0' }}
+                contentStyle={{ background: '#ffffff', border: '1px solid #cbd5e1', fontSize: 11 }}
+                labelStyle={{ color: '#64748b' }}
                 formatter={(value) => [Number(value ?? 0).toFixed(1), 'BHI']}
               />
-              <ReferenceLine y={BHI_GREEN} stroke="#22c55e" strokeDasharray="4 3" strokeOpacity={0.5} />
-              <ReferenceLine y={BHI_AMBER} stroke="#f59e0b" strokeDasharray="4 3" strokeOpacity={0.5} />
+              <ReferenceLine y={BHI_GREEN} stroke="#16a34a" strokeDasharray="4 3" strokeOpacity={0.5} />
+              <ReferenceLine y={BHI_AMBER} stroke="#d97706" strokeDasharray="4 3" strokeOpacity={0.5} />
               <Area
                 type="monotone"
                 dataKey="v"
-                stroke="#38bdf8"
+                stroke="#0d9488"
                 strokeWidth={1.5}
                 fill="url(#trendGrad)"
                 dot={false}

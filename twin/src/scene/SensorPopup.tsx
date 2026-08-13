@@ -88,21 +88,21 @@ export const SensorPopup = memo(function SensorPopup() {
                 <AreaChart data={chartData} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
                   <defs>
                     <linearGradient id="specGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.6} />
-                      <stop offset="100%" stopColor="#38bdf8" stopOpacity={0.05} />
+                      <stop offset="0%" stopColor="#0d9488" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="#0d9488" stopOpacity={0.05} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="k" hide />
                   <YAxis hide domain={[0, 'dataMax']} />
                   <Tooltip
-                    contentStyle={{ background: '#10161d', border: '1px solid #22303c', fontSize: 11 }}
-                    labelStyle={{ color: '#7c8ea0' }}
+                    contentStyle={{ background: '#ffffff', border: '1px solid #cbd5e1', fontSize: 11 }}
+                    labelStyle={{ color: '#64748b' }}
                     formatter={(value) => [Number(value ?? 0).toFixed(4), 'mag']}
                   />
                   <Area
                     type="monotone"
                     dataKey="v"
-                    stroke="#38bdf8"
+                    stroke="#0d9488"
                     strokeWidth={1}
                     fill="url(#specGrad)"
                     dot={false}
