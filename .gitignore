@@ -13,6 +13,10 @@ models/weights/*.pkl
 data/z24/*
 !data/z24/.gitkeep
 
+# Real CV datasets (large, re-downloadable; see scripts/download_dacl10k.py)
+data/cv/*
+!data/cv/.gitkeep
+
 # Node / twin
 node_modules/
 twin/dist/
