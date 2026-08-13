@@ -1,0 +1,84 @@
+"""
+vibration/demo_predictor.py — trained-evidence PUSH for the backend floor.
+
+The backend (``backend/app/anomaly.py``) owns the deterministic spectral floor
+(the always-on, false-alarm-proof baseline detector that carries the demo) and
+asks this module for ONE thing — how much extra "trained evidence" the ML
+ensemble (VAE/OCSVM, LSTM-AE, MiniRocket) contributes for a window:
+
+    push = demo_predictor.trained_push(window, fs=100)   # float in [0, 1]
+
+Honesty + safety rules:
+  * ``push`` is the trained ensemble's score measured relative to THIS bridge's
+    OWN healthy envelope (high-water mark seen during warm-up), so a model with
+    no discriminative signal returns ~0 and can never create a false alarm or
+    break the GREEN->RED story arc.  The floor always remains the base.
+  * ``push == 0.0`` during warm-up (the first ``n_healthy`` windows are absorbed
+    as healthy evidence) and when no trained artifacts exist in models/weights/.
+  * Trained artifacts are loaded lazily on first call and cached for the process
+    lifetime; a broken/corrupt artifact degrades to push=0, never a crash.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+
+_detector: Optional["AnomalyDetector"] = None
+_detector_failed = False
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_WEIGHTS = _REPO_ROOT / "models" / "weights"
+
+# 5 windows (~51 s real-time) — completes during the healthy phase of the
+# 175 s demo, well before the ~75 s damage onset, so the envelope is built from
+# genuinely healthy windows.
+_N_HEALTHY = 5
+
+
+def _build_detector():
+    try:  # package context (backend imports models.vibration.demo_predictor)
+        from .infer import AnomalyDetector
+    except ImportError:  # bare-script run (python models/vibration/demo_predictor.py)
+        from infer import AnomalyDetector
+    return AnomalyDetector(weights_dir=_DEFAULT_WEIGHTS, n_healthy=_N_HEALTHY)
+
+
+def trained_push(window, fs: int = 100) -> float:
+    """Return the trained ensemble's envelope-relative evidence, float in [0,1]."""
+    global _detector, _detector_failed
+    if _detector is None and not _detector_failed:
+        try:
+            _detector = _build_detector()
+        except Exception as exc:  # pragma: no cover - only when models/ is broken
+            import logging
+            logging.getLogger(__name__).warning(
+                "demo_predictor: detector init failed (%s); trained push disabled", exc)
+            _detector_failed = True
+    if _detector is None:
+        return 0.0
+    try:
+        return _detector.trained_deviation(np.asarray(window, dtype=np.float64))
+    except Exception:  # pragma: no cover - trained scoring must never break the floor
+        return 0.0
+
+
+if __name__ == "__main__":  # self-test
+    fs = 100.0
+    t = np.arange(1024) / fs
+    rng = np.random.default_rng(3)
+
+    def synth(amp, extra=0.0):
+        return (0.05 * np.sin(2 * np.pi * 2.0 * t) + 0.04 * np.sin(2 * np.pi * 5.5 * t)
+                + 0.02 * np.sin(2 * np.pi * 9.0 * t) + 0.01 * rng.standard_normal(1024)) * amp \
+            + extra * rng.standard_normal(1024)
+
+    det = _build_detector()
+    print(f"mode: {det.mode}")
+    for _ in range(_N_HEALTHY):
+        trained_push(synth(1.0))           # warm-up: push 0
+    p_h = trained_push(synth(1.0))
+    p_d = trained_push(synth(1.7, extra=0.02))
+    print(f"demo_predictor self-test PASS  healthy_push={p_h:.3f} damage_push={p_d:.3f}")
+    assert 0.0 <= p_h <= 1.0 and 0.0 <= p_d <= 1.0

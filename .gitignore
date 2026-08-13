@@ -8,6 +8,7 @@ venv/
 *.npz
 *.pt
 *.onnx
+models/weights/*.pkl
 !models/weights/.gitkeep
 data/z24/*
 !data/z24/.gitkeep

@@ -75,6 +75,17 @@ class AnomalyDetector:
         self._buffer: list[np.ndarray] = []
         self._warmup_done = False
 
+        # healthy-envelope floor+push fusion (decision #5, false-alarm-proof):
+        # the trained model can only PUSH the anomaly estimate above the
+        # deterministic baseline, and only when its raw score departs from this
+        # bridge's OWN healthy envelope (high-water mark seen during warm-up).
+        # A model with no discriminative signal (dev ~ 0) leaves the heuristic
+        # in charge, so the demo arc can never be broken by a bad model.
+        self._envelope_hi = 0.0          # max raw trained score seen while healthy
+        self._envelope_seen = False
+        self._envelope_margin = 0.05     # dead-band so healthy jitter never pushes
+        self.trained_push = 0.85         # strength of the trained-model push
+
         # heuristic fallback baseline (always maintained so it can serve/blend)
         self._heuristic = HeuristicAnomalyScorer(fs=self.fs)
 
@@ -118,6 +129,7 @@ class AnomalyDetector:
                     self._ocsvm = _load_pickle(ocsvm_path)
                     self._mode_note = (f"VAE/OCSVM (vae.pt, mode={ckpt.get('mode')}, "
                                        f"latent={ckpt.get('latent_dim')})")
+                    self._mode_note += " · envelope-floor+push"
                 except Exception as exc:
                     print(f"  [infer] WARNING: failed to load VAE/OCSVM artifacts ({exc}); "
                           "using heuristic fallback.")
@@ -153,12 +165,36 @@ class AnomalyDetector:
         return out
 
     # ----------------------------------------------------------- baseline feed
+    def _trained_raw(self, window: np.ndarray) -> tuple[float, float]:
+        """Mean raw trained score + uncertainty across enabled trained components."""
+        scores: list[float] = []
+        uncs: list[float] = []
+        if self._ocsvm is not None:
+            s, u = self._score_vae_ocsvm(window)
+            scores.append(s)
+            uncs.append(u)
+        if self._lstm_cfg:
+            s, u = self._score_lstm(window)
+            scores.append(s)
+            uncs.append(u)
+        if not scores:
+            return 0.0, 1.0
+        return float(np.mean(scores)), float(np.mean(uncs))
+
+    def _update_envelope(self, raw: float) -> None:
+        """Extend the healthy envelope's high-water mark (warm-up windows only)."""
+        if raw > 0.0:
+            self._envelope_seen = True
+            self._envelope_hi = max(self._envelope_hi, float(raw))
+
     def add_healthy(self, window: np.ndarray) -> None:
         """Explicitly register a known-healthy window into the baseline."""
         w = self._prep(window)
         with self._lock:
             self._buffer.append(w)
             self._heuristic.update_healthy(w)
+            if self._ocsvm is not None or self._lstm_cfg:
+                self._update_envelope(self._trained_raw(w)[0])
             if len(self._buffer) >= self.n_healthy:
                 self._warmup_done = True
 
@@ -167,31 +203,28 @@ class AnomalyDetector:
         """Return (anomaly_score_0_1, uncertainty_0_1) for one 1024-sample window."""
         w = self._prep(window)
         with self._lock:
+            t_s, t_u = self._trained_raw(w)
             if not self._warmup_done:
                 # warm-up: absorb this window as healthy evidence
                 self._buffer.append(w)
                 self._heuristic.update_healthy(w)
+                if self._ocsvm is not None or self._lstm_cfg:
+                    self._update_envelope(t_s)
                 if len(self._buffer) >= self.n_healthy:
                     self._warmup_done = True
                 return (0.0, 1.0)  # honest: baseline not established
 
-            trained_scores: list[float] = []
-            trained_uncs: list[float] = []
-            if self._ocsvm is not None:
-                s, u = self._score_vae_ocsvm(w)
-                trained_scores.append(s)
-                trained_uncs.append(u)
-            if self._lstm_cfg:
-                s, u = self._score_lstm(w)
-                trained_scores.append(s)
-                trained_uncs.append(u)
-
             hs, hu = self._heuristic.score(w)
-            if trained_scores:
-                t_s = float(np.mean(trained_scores))
-                t_u = float(np.mean(trained_uncs))
-                score = (1.0 - self.blend_heuristic) * t_s + self.blend_heuristic * hs
-                uncertainty = (1.0 - self.blend_heuristic) * t_u + self.blend_heuristic * hu
+            if self._envelope_seen:
+                # Healthy-envelope floor+push: the deterministic heuristic is the
+                # floor; the trained ensemble only ADDS evidence when it departs
+                # from this bridge's own healthy envelope (measured during
+                # warm-up). dev~0 (no trained signal) => heuristic in charge, so
+                # a model that cannot separate its classes can never trigger a
+                # false alarm or break the GREEN->RED story arc.
+                dev = max(0.0, t_s - self._envelope_hi - self._envelope_margin)
+                score = hs + dev * self.trained_push
+                uncertainty = max(hu, 0.10 + 0.6 * dev)
             else:
                 score, uncertainty = hs, hu
             return (_clamp(score), _clamp(uncertainty))
@@ -205,7 +238,37 @@ class AnomalyDetector:
         with self._lock:
             self._buffer = []
             self._warmup_done = False
+            self._envelope_hi = 0.0
+            self._envelope_seen = False
             self._heuristic = HeuristicAnomalyScorer(fs=self.fs)
+
+    # ------------------------------------------------------ trained-only push
+    def trained_deviation(self, window: np.ndarray) -> float:
+        """Envelope-relative trained evidence, used as a PUSH on the backend floor.
+
+        Returns a float in [0, 1] = how far the trained ensemble's raw score
+        departs above this bridge's OWN healthy envelope (high-water mark seen
+        during warm-up). Returns 0.0 during warm-up or when no trained model is
+        loaded, so an uninformative model can never create a false alarm. The
+        deterministic spectral floor (owned by backend/app/anomaly.py) is always
+        the base; this only adds honest trained evidence on top.
+        """
+        w = self._prep(window)
+        with self._lock:
+            t_s, _ = self._trained_raw(w)
+            if not self._warmup_done:
+                # warm-up: absorb as healthy evidence (demo healthy phase does this)
+                self._buffer.append(w)
+                self._heuristic.update_healthy(w)
+                if self._ocsvm is not None or self._lstm_cfg:
+                    self._update_envelope(t_s)
+                if len(self._buffer) >= self.n_healthy:
+                    self._warmup_done = True
+                return 0.0
+            if not self._envelope_seen:
+                return 0.0
+            dev = max(0.0, t_s - self._envelope_hi - self._envelope_margin)
+            return _clamp(dev * self.trained_push)
 
     # --------------------------------------------------------- trained scoring
     def _vae_input(self, window: np.ndarray) -> np.ndarray:

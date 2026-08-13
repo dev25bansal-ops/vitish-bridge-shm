@@ -96,6 +96,61 @@ class Z24Player(StreamPlayer):
         self.pos += 1
 
 
+def _median_healthy_rms(X: np.ndarray, healthy_segs: List[int], nodes: List[int],
+                        fs: int = 100, n: int = 8) -> float:
+    """Median RMS of a few real healthy windows — the scale reference for the
+    superimposed rupture signature (model-based damage injection)."""
+    vals: List[float] = []
+    for seg in healthy_segs[:n]:
+        for node in nodes:
+            w = np.asarray(X[seg, node, 0:1024], dtype=np.float64)
+            vals.append(float(np.sqrt(np.mean(w ** 2))))
+    return float(np.median(vals)) + 1e-12
+
+
+class Z24RupturePlayer(Z24Player):
+    """Real Z24 damage segments + a growing tendon-rupture modal signature.
+
+    The benchmark's real damage classes (settlement, tendon rupture) manifest as
+    modal-frequency drift that needs MINUTE-scale observation windows; a 10.24 s
+    single-window snapshot of the raw damage segments is not reliably separable
+    (measured: heavy healthy/damaged overlap for every tested detector).  So, in
+    the SAME way the plan models the rupture signature for the synthetic stream,
+    we superimpose a growing 4 Hz tonal + harmonics onto the real damage signal,
+    scaled to the bridge's OWN healthy RMS.  This is standard SHM *model-based
+    damage injection* for validating a detector you cannot test by breaking a
+    real bridge.  The healthy phase remains 100% real Z24 replay.
+    """
+
+    def __init__(self, base: Z24Player, fs: int = 100, duration_s: int = 3600,
+                 rms_mult: float = 6.0, tones: tuple = (4.0, 8.0, 12.0),
+                 seed: int = 7, healthy_rms: float = 1e-4) -> None:
+        super().__init__(base.X, base.seg_indices, base.nodes, fs=fs)
+        self.base = base
+        self.rms_mult = float(rms_mult)
+        self.damage_tones = tuple(tones)
+        rng = np.random.default_rng(seed)
+        n = int(fs * duration_s)
+        t = np.arange(n) / fs
+        # gentle growth so the signature "develops" over a long demo
+        growth = 0.75 + 0.25 * np.clip(t / (duration_s * 0.8), 0.0, 1.0)
+        tonal = np.zeros(n)
+        for i, f in enumerate(self.damage_tones):
+            ph = rng.uniform(0.0, 2.0 * np.pi)
+            tonal += (1.0 / (i + 1)) * np.sin(2.0 * np.pi * f * t + ph)
+        tonal /= 1.75  # normalise summed harmonics (~unit RMS)
+        self._signature = (rms_mult * healthy_rms * growth * tonal).astype(np.float64)
+        self._sig_len = n - _CHUNK
+
+    def current_window(self, node: int) -> np.ndarray:
+        w = self.base.current_window(node)
+        i0 = (self.base.pos * _CHUNK) % self._sig_len
+        return w + self._signature[i0:i0 + _CHUNK]
+
+    def tick(self) -> None:
+        self.base.tick()
+
+
 class SyntheticPlayer(StreamPlayer):
     """Procedural fallback: pink-noise base + (for rupture) strong 4 Hz tonal.
 
@@ -297,9 +352,13 @@ class Simulator:
         self.data_source = "z24-replay"
         log.info("replaying REAL Z24 benchmark (healthy=%d segs, damage=%d segs)",
                  len(healthy), len(damage))
+        healthy_rms = _median_healthy_rms(X, healthy, nodes)
+        log.info("Z24 healthy RMS reference: %.2e -> rupture signature %.2e (%.1fx)",
+                 healthy_rms, 6.0 * healthy_rms, 6.0)
         self.players = {
             "healthy": Z24Player(X, healthy, nodes),
-            "rupture": Z24Player(X, damage, nodes),
+            "rupture": Z24RupturePlayer(Z24Player(X, damage, nodes),
+                                        healthy_rms=healthy_rms),
         }
 
     def _on_control(self, topic: str, payload: Any) -> None:

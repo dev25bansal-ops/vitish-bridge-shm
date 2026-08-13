@@ -110,18 +110,26 @@ def _spectral_heuristic(window: np.ndarray, fs: int = 100) -> Tuple[float, float
 def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
     """Return (score, uncertainty) for one 1024-sample window.
 
-    Delegates to ``models.vibration.demo_predictor.get_anomaly`` when the ML
-    agent ships it; otherwise the deterministic spectral heuristic above.
+    THE DEMO-CRITICAL ENTRY POINT.  The deterministic spectral heuristic
+    (below) is the ALWAYS-ON floor: it is what makes the GREEN->RED story arc
+    work, and it never depends on trained weights.  On top of the floor, the ML
+    ensemble (``models/vibration/demo_predictor``) may ADD a trained-model push
+    -- but ONLY as its envelope-relative deviation (see demo_predictor), so an
+    uninformative or missing model contributes ~0 and can never break the arc.
     """
     arr = np.asarray(window, dtype=np.float64).reshape(-1)
     if arr.size < 64:
         return 0.0, 0.05
 
+    base_score, base_unc = _spectral_heuristic(arr, fs)
+
+    push = 0.0
     try:
         from models.vibration import demo_predictor  # type: ignore[import-not-found]
-        if hasattr(demo_predictor, "get_anomaly"):
-            return demo_predictor.get_anomaly(arr, fs=fs)
+        push = float(demo_predictor.trained_push(arr, fs=fs))
     except Exception as exc:  # pragma: no cover - depends on models agent
-        log.debug("real predictor unavailable, using spectral heuristic (%s)", exc)
+        log.debug("trained push unavailable, floor only (%s)", exc)
 
-    return _spectral_heuristic(arr, fs)
+    score = min(1.0, base_score + push)
+    uncertainty = min(0.40, base_unc + 0.20 * push)
+    return score, uncertainty

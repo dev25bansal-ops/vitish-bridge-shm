@@ -79,13 +79,13 @@ BEATS: List[Dict[str, Any]] = [
         ],
     },
     {
-        "t": 110.0, "name": "bhi-drop", "desc": "BHI drops 87 → RED (crosses 50)",
+        "t": 110.0, "name": "bhi-drop", "desc": "BHI drops 87 → RED (load + CV evidence push it critical)",
         "actions": [
             {"kind": "cmd", "payload": {"cmd": "load", "value": 0.40}},
             {"kind": "cmd", "payload": {"cmd": "cv", "value": 0.55}},
             {"kind": "alert", "payload": {
                 "severity": "critical", "source": "fusion",
-                "text": "Bridge Health Index dropped to RED (87 → 4x)",
+                "text": "Bridge Health Index dropped to RED (crossed 50 — critical)",
                 "recommendation": "Restrict traffic; dispatch inspection crew"}},
         ],
     },
