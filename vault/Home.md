@@ -16,6 +16,7 @@ tags: [home, vitish-2026, shm]
 - 🔨 [[Build-Log]] · [[Data-Pipeline]] · [[CV-Model]] · [[Vibration-Model]] · [[Digital-Twin]]
 - 🎤 [[Storyboard]] · [[QandA-Prep]] · [[Metrics]]
 - ⚠️ [[Risk-Register]] · ✅ [[Pre-Hackathon-Checklist]] · [[36h-Build-Plan]]
+- 🚀 [[Company-Project]] (startup / YC — "Prevent the next Morbi")
 
 ## The pitch hook (one line)
 
@@ -41,7 +42,9 @@ tags: [home, vitish-2026, shm]
 - ✅ Research (12-agent workflow) complete
 - ✅ Master build plan written
 - ✅ **Build + integration verified** — see [[Build-Log]]
-- 🔜 Demo rehearsal + stretch training
+- ✅ Real CV datasets downloaded (crack-seg 4,081 imgs → CRACK500+DeepCrack → dacl10k)
+- 🚀 **Startup pivot** — full company/YC project written → [[Company-Project]]
+- 🔜 Next build: real `crack_seg.pt` + ESP32 node + pilot LOIs
 
 ---
 
