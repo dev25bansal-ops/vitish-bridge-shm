@@ -10,6 +10,9 @@ venv/
 *.onnx
 models/weights/*.pkl
 !models/weights/.gitkeep
+# YOLO training runs (batch-preview images + weights are bulk and re-generable;
+# the trained weights under models/weights/*.pt are separately ignored)
+models/weights/yolo_runs/
 data/z24/*
 !data/z24/.gitkeep
 
@@ -20,6 +23,11 @@ data/cv/*
 # Real vibration datasets (large; HBTA h5 2.5GB, Z24 under data/z24/)
 data/vib/*
 !data/vib/.gitkeep
+
+# Real LTBP fleet data (large raw exports, re-downloadable from FHWA InfoBridge;
+# small derived artifacts in data/ltbp/analysis/ are committed)
+data/ltbp/*.txt
+!data/ltbp/.gitkeep
 
 # Node / twin
 node_modules/
@@ -42,6 +50,15 @@ docker-data/
 *.json
 !docker-compose.yml
 !package.json
+!data/ltbp/analysis/*.json
+
+# Research diagnostic dumps (raw web fetches; the distilled summaries in
+# .verify/*.txt / vault are what teammates need)
+.verify/*.html
+.verify/*.xml
+.verify/cf_readme.txt
+.verify/cj.txt
+.verify/sut_loaders.py
 
 # OS
 Thumbs.db

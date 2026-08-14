@@ -54,6 +54,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--imgsz", type=int, default=512)
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=8,
+                    help="dataloader workers (laptops w/ <16GB RAM: use 2-4 to "
+                         "avoid pagefile thrash from worker prefetch caches)")
+    ap.add_argument("--cache", default=False,
+                    help="True to RAM-cache decoded images (fast epochs, needs "
+                         "~n_imgs*imgsz^2*3 bytes; keep False on low-RAM boxes)")
     ap.add_argument("--device", default=None, help="'0','cpu', etc. (default: auto)")
     ap.add_argument("--outdir", default=str(DEFAULT_WEIGHTS))
     args = ap.parse_args(argv)
@@ -104,7 +110,8 @@ def main(argv: list[str] | None = None) -> int:
           f"imgsz={args.imgsz} device={device}")
     model.train(data=str(data), epochs=args.epochs, imgsz=args.imgsz,
                 batch=args.batch, device=device, project=str(project),
-                name="crack_seg", verbose=True)
+                name="crack_seg", workers=args.workers, cache=args.cache,
+                verbose=True)
 
     # best.pt -> canonical crack_seg.pt location
     best = project / "crack_seg" / "weights" / "best.pt"

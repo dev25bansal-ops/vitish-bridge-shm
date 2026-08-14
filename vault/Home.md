@@ -11,7 +11,7 @@ tags: [home, vitish-2026, shm]
 ## Quick navigation
 
 - 📋 [[Mission]] · [[Four-Components]] · [[Team]] · [[Key-Decisions]]
-- 🔬 [[Verified-Facts]] · [[Datasets]] · [[Academic-SOTA]] · [[India-Policy]]
+- 🔬 [[Verified-Facts]] · [[Datasets]] · [[Academic-SOTA]] · [[India-Policy]] · [[Realistic-Digital-Twin]] · [[Data-Access-Checklist]]
 - 🏛️ [[System-Architecture]] · [[Message-Contract]] · [[BHI-Formula]] · [[Tech-Stack]]
 - 🔨 [[Build-Log]] · [[Data-Pipeline]] · [[CV-Model]] · [[Vibration-Model]] · [[Digital-Twin]]
 - 🎤 [[Storyboard]] · [[QandA-Prep]] · [[Metrics]]

@@ -1,0 +1,46 @@
+=== CRITIQUE ===
+Ground truth verified against the repo before judging (backend/app/contract.py, fusion.py, demo_driver.py, anomaly.py, simulator.py, live_feed.py, models/cv/inference.py, twin/src/scene/MorbiBridge.tsx, backend/tests/smoke_test.py, data/z24/). Facts that anchor the verdict:
+
+- bridge_id = "z24" end-to-end (contract.py:21). The 3D scene is a 230 m cable-stayed deck with hangers (MorbiBridge.tsx) and a collapse animation.
+- The numbers 67.5 and 33.6 appear NOWHERE in the repo (grep across backend/, twin/, scripts/, .verify/, vault/). Only 87.0 (config.py:114) and the state thresholds GREEN≥70 / AMBER[50,70) / RED<50 (contract.py:88) exist. smoke_test pins 87±0.2 and RED<50 only.
+- The arc is driven by demo_driver.py commands cv=0.30/0.55, load=0.40 (beats at t=45/110) + a spectral heuristic; fusion.py's own docstring says "cv and load are evidence sub-indices; in the demo they are set through control/cmd events."
+- anomaly.py's score is a deterministic tonality/low-band/RMS heuristic; LSTM-AE/VAE contribute only an envelope-relative push that defaults to ~0. Hero vib is a real 991 MB Z24 replay (simulator.py "REPLAY-FIRST"), so vib is genuinely measured; cv and load are scripted.
+- cv/inference.py already outputs "area-weighted crack burden, clamped 0..1" — no width/mm path exists; no GSD calibration anywhere.
+- The two simulator stream players use wildly different healthy amplitudes (healthy_rms=1e-4 vs rms_healthy=0.05).
+
+VERDICT
+
+(a) Gaps / corrections
+
+1. Bridge identity is incoherent (blocks items 1 and 5). Backend physics story = Z24 30 m prestressed concrete box girder (f1 3–4 Hz, pinned-pinned); 3D scene = cable-stayed Morbi deck; north star = Stavå. Item 5's closed-form EI = 4·f1²·L⁴·ρA/π² is wrong physics shown on a cable-stayed deck whose first mode is ~0.3–0.6 Hz global, not 3–4 Hz. A structural reviewer catches this in under a minute. Decide ONE identity; if the Morbi mesh stays, item 5 becomes a cable-stayed frame FE (with cable pretension) — much harder than the roadmap's "numpy Euler-Bernoulli" rating. This is the highest-leverage unaddressed decision.
+
+2. "The verified 87→67.5→33.6 arc in demo_driver.py" is a memory artifact, not an encoded acceptance test. Those numbers exist only in memory; the arc is emergent from commanded cv/load + the heuristic and is not pinned by any test. The roadmap leans on it as a guardrail across items 1, 3, 5, 6, 8, 12. Until you pin it as an automated regression test (with tolerances, e.g. AMBER∈[55,75], RED∈[20,45]), every stream change silently re-rolls the emergent values.
+
+3. "Load is the only fully scripted sub-index" (item 6 premise) is false. cv is equally scripted via demo_driver commands. Items 2/4/10's "real crack index drives the BHI" is aspirational: the demo path commands cv=0.30/0.55; real CrackSeg9k inference is not wired into the demo (a frame topic bridge/z24/frame already exists). Until real inference replaces the cv commands, the condition card and the Markov "update by measured crack index" update on a scripted number.
+
+4. Item 2/10's mm-width classes (<0.3 / 0.3–1 / >1 mm per FHWA/ACI) are not honestly computable: pixel width→mm needs a GSD/camera calibration the CrackSeg9k pipeline doesn't have. As written this violates the roadmap's own HARD RULE. Fix: report relative severity (area ratio / width as fraction of reference) with an explicit "requires GSD calibration for mm" note, or add the calibration. Also items 2 and 10 duplicate the same skeleton+distance-transform core yet are both rated S.
+
+5. Item 1's f(T) regression has an unaddressed resolution problem. 1024-sample @100 Hz windows resolve ~0.098 Hz; the roadmap's own cited ~14% annual Z24 shift is ~0.5 Hz/yr on a ~3.5 Hz mode — the daily/residual signal you want to regress sits at or below the window resolution. You need ≥60–120 s windows and/or an accelerated simulated clock, neither of which the roadmap states. It also requires the demo clock to run multiple "days" — the 175 s driver doesn't do this.
+
+6. Item 3 as written double-counts noise on measured data. Hero vib is real Z24 replay (already contains real noise at real levels). "y = physics + Gaussian(sigma_datasheet)" applied to the replay channel corrupts measured data. Noise models must apply only to genuinely synthetic channels (strain, temp, wind, WIM) and to the damage overlay; the manifest/provenance split enforces this. Separately, the accel "add noise" is really a re-scale (the two stream players sit at 1e-4 vs 0.05), which touches the heuristic baseline and the arc — this is M effort, not S, and it is the single riskiest coupling in the plan.
+
+7. Coverage gap that would change item 2's design: Italy's post-Morandi Linee Guida (Ministerial Decree 578/2020) — risk classification with knowledge/confidence levels — is the current European regulator template and is more honest than NBI 0–9 (which implies a certified inspector's calibrated rating the repo cannot prove; mapping one area-ratio to "deck = 5" is exactly the overclaim trap). India/IRC norms are absent despite the Morbi scene and the PS#99 audience. Japan's damage-diagram grading is cited only for event capture, not for the condition-card pattern.
+
+8. Mis-aimed guardrail: item 1's "do NOT replace the calibrated LSTM-AE score" protects the wrong component. The arc is carried by the spectral heuristic + commanded cv/load + fusion weights, not the LSTM-AE (push defaults to ~0).
+
+(b) Single highest-value cheap realism win
+
+Time-scale honesty: a visible simulated clock / time-lapse label ("simulated day 214 of 365, clock ×1800") plus the longer FFT windows needed to resolve f(T). ~1–2 h of work. It is the load-bearing precondition for items 1, 4 and 6 all being honest at once — temperature regression, the Markov projection fan, and WIM load history are all temporal claims, and shown inside an unlabeled 175 s demo they are the single most theater-smelling artifact any reviewer sees. Runner-up (free, do first): pin the 87→AMBER→RED arc as a regression test before any stream change (gap 2).
+
+(c) Drop / demote
+
+- Item 9 (maturity-ladder honesty) — promote from #9 to #1–2. S effort, zero risk, free realism, and it is the artifact that enforces the HARD RULE across every number.
+- Item 3 — promote to #2 but re-rate accel M, not S (re-scale + arc coupling, gap 6).
+- Item 12 — demote to a stretch/merge into items 1+5; the "rupture" scenario already exists, it is narrative polish.
+- Merge items 2 + 10 into one task (same skeleton+DM core) and add the GSD decision.
+- Item 5 — keep at M but gate it on the identity decision (gap 1); the eigensolve is trivial, the physics story is the cost.
+- Item 4 — keep at M but its "updated by the measured crack index" is not honest until gap 3 (real cv in demo) is done; the "expected time-to-poor-state" needs the explicit "not a validated RUL" label on the chart, not only in the vault.
+
+(d) Fit to guide the next phase?
+
+Conditional yes — not fit to start in its current form. Direction is right (temperature normalization, regulator-style condition card, honesty manifest, Markov, physics proxy, WIM, visual honesty, digital-shadow labeling) and the dropped_as_unrealistic list is sound. Three blockers before phase 2 begins: (1) settle bridge identity (Z24 beam physics vs Morbi cable-stayed mesh) or items 1/5 rest on wrong physics; (2) pin the 87→AMBER→RED arc as a regression test with tolerances before items 1/3/6 change any stream; (3) wire real CrackSeg9k inference into the demo path and resolve the GSD/mm-width question, or items 2/4/10 violate the very HARD RULE the plan is built on. Resolve those three and this roadmap is a strong, honest guide; as written it would drift into overclaiming within the first two items it executes.
