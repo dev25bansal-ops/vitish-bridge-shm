@@ -107,6 +107,14 @@ def test_tracker() -> None:
         check("baseline f1 ~3.8", 3.7 <= s["f1_ref"] <= 3.95, str(s["f1_ref"]))
         check("healthy: no drift", s["ei_drift_pct"] < 2.0, str(s["ei_drift_pct"]))
         check("healthy: damage ~0", s["damage_pct"] < 3.0, str(s["damage_pct"]))
+        # D2-10 live path: the thermal overlay rides the snapshot, the baseline
+        # is T_REF-normalized, and a healthy feed must NOT read as a thermal
+        # residual loss (no false damage from the season).
+        check("snapshot carries sim clock", "sim_clock" in s and "temp_c" in s,
+              str(s.keys()))
+        check("healthy: residual inside thermal band (no false loss)",
+              abs(s.get("residual_drift_pct", 0.0)) < s.get("residual_band_pct", 7.0),
+              str(s.get("residual_drift_pct")))
 
         _feed(tracker, bus, 3.52, 25)
         s = tracker.snapshot()

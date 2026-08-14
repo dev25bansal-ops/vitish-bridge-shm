@@ -85,6 +85,8 @@ class StiffnessTracker:
         self._baseline_peaks: Deque[float] = deque(maxlen=_BASELINE_WINDOWS)
         self._f1: float = 0.0
         self._baseline: Optional[float] = None
+        self._f1_ref_thermal: Optional[float] = None  # baseline normalized to 20 C
+        self._baseline_doy: Optional[float] = None
         self._last_seen = 0.0
         self._token: Optional[int] = None
         self._lock = threading.RLock()
@@ -133,20 +135,41 @@ class StiffnessTracker:
                         if len(self._baseline_peaks) >= _BASELINE_WINDOWS:
                             self._baseline = float(np.median(
                                 self._baseline_peaks))
-                            log.info("stiffness baseline f1 = %.3f Hz",
-                                     self._baseline)
+                            # Normalize the baseline to the reference temp so the
+                            # thermal residual compares like-for-like: the
+                            # baseline is measured at the CURRENT simulated
+                            # season (already shifted by it), so comparing it to
+                            # a season-thermal expectation would show a false
+                            # "loss" on a healthy bridge.
+                            try:
+                                from app import sim_clock
+                                from models.vibration import temperature as th
+                                self._baseline_doy = sim_clock.day_of_year()
+                                lock_temp = th.seasonal_temp_c(self._baseline_doy)
+                                self._f1_ref_thermal = th.normalize_to_ref(
+                                    self._baseline, lock_temp)
+                            except Exception:  # never block baseline on overlay
+                                self._f1_ref_thermal = self._baseline
+                            log.info("stiffness baseline f1 = %.3f Hz "
+                                     "(thermal ref %.3f Hz @20C)",
+                                     self._baseline, self._f1_ref_thermal)
 
     # -- read ----------------------------------------------------------------------
     def snapshot(self) -> dict:
+        from app import sim_clock  # lazy import (deterministic clock module)
         from models.vibration import stiffness as physics  # lazy import
         with self._lock:
             f1 = self._f1
             base = self._baseline
             age = contract.now() - self._last_seen if self._last_seen else None
-        snap = physics.snapshot(f1, base)
+        doy = sim_clock.day_of_year()
+        snap = physics.snapshot(f1, base, day_of_year=doy,
+                                temp_f1_ref=self._f1_ref_thermal)
         snap["baseline_locked"] = base is not None
         snap["stale"] = bool(age is not None and age > _STALE_AFTER_S)
         snap["age_s"] = round(age, 1) if age is not None else None
+        snap["sim_day"] = round(doy, 1)
+        snap["sim_clock"] = sim_clock.label(doy)
         return snap
 
 

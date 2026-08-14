@@ -163,11 +163,22 @@ def midspan_deflection_um(load_n: float, ei: float = EI_REF,
 
 
 # --- public snapshot builder ---------------------------------------------------
-def snapshot(f1_meas: Optional[float], f1_base: Optional[float] = None) -> dict:
+def snapshot(f1_meas: Optional[float], f1_base: Optional[float] = None,
+             day_of_year: Optional[float] = None,
+             temp_f1_ref: Optional[float] = None) -> dict:
     """One honest, self-describing physics payload for the API/twin.
 
     `f1_base` (default F1_REF) is the healthy baseline the drift is measured
     against — a live tracker passes its own measured self-baseline.
+    `day_of_year` (1..365) optionally drives the seasonal temperature overlay
+    (D2-10): the thermal expectation of f1 and the temperature-compensated
+    residual that separates thermal wandering from REAL stiffness loss.  When
+    omitted the payload carries no thermal fields (offline/physics-only use).
+    `temp_f1_ref` is the healthy reference at T_REF used by the thermal model —
+    a live tracker passes its baseline NORMALIZED to 20 C (see
+    ``models.vibration.temperature.normalize_to_ref``) so the residual compares
+    like-for-like instead of double-counting the season; when omitted the
+    thermal model falls back to ``f1_base``.
 
     Honesty notes:
       * The damage inversion is **self-calibrating**: the measured f1 is mapped
@@ -178,6 +189,9 @@ def snapshot(f1_meas: Optional[float], f1_base: Optional[float] = None) -> dict:
       * `ei_drift_pct` is clamped to ≥ 0: a measured f1 *at or above* baseline is
         a forced response (e.g. the demo's 4 Hz rupture tonal), never a stiffness
         *gain*, so the overlay refuses to claim "stiffening".
+      * The temperature overlay is SIMULATED (day-of-year model anchored to the
+        Z24 ~14% seasonal f1 shift) and the residual is the honest quantity —
+        see ``models.vibration.temperature``.
     """
     f1 = f1_meas if f1_meas and f1_meas > 0 else F1_REF
     base = f1_base if f1_base and f1_base > 0 else F1_REF
@@ -190,7 +204,7 @@ def snapshot(f1_meas: Optional[float], f1_base: Optional[float] = None) -> dict:
     freqs, shapes = fem_modes(damage_profile(damage), n_modes=2)
     f1_drift_pct = 100.0 * (f1 / base - 1.0)
     ei_drift_pct = max(0.0, 100.0 * (1.0 - (f1 / base) ** 2))
-    return {
+    payload = {
         "model": "z24 continuous 3-span box girder (14+30+14 m)",
         "reference": "simple-span proxy EI = 4·f1²·L⁴·ρA/π², L=30 m",
         "f1_meas": round(f1, 3),
@@ -207,6 +221,11 @@ def snapshot(f1_meas: Optional[float], f1_base: Optional[float] = None) -> dict:
         "shapes": [[round(float(v), 4) for v in shapes[:, m].tolist()]
                    for m in range(shapes.shape[1])],
     }
+    if day_of_year is not None:
+        from models.vibration import temperature as thermal
+        thermal_ref = temp_f1_ref if temp_f1_ref and temp_f1_ref > 0 else base
+        payload.update(thermal.temp_fields(f1, thermal_ref, day_of_year))
+    return payload
 
 
 if __name__ == "__main__":
