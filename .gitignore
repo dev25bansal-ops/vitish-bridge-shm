@@ -66,6 +66,7 @@ docker-data/
 .verify/*.jpg
 .verify/*_dom.html
 .verify/geo_verify.cjs
+.verify/arc_calib.py
 
 # OS
 Thumbs.db

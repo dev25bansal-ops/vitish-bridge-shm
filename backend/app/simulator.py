@@ -75,6 +75,97 @@ class StreamPlayer:
         raise NotImplementedError
 
 
+class SyntheticPinkBase(StreamPlayer):
+    """Pink-noise deck response + (healthy) ambient first-mode resonance.
+
+    The healthy synthetic stream carries a modest modal resonance at the Z24
+    fundamental (``physics.F1_REF`` = 3.80 Hz) on the mid-span node, so the
+    stiffness tracker's self-baseline locks near the REAL healthy f1 on the
+    synthetic path too — the D2-12 physics overlay (f1, EI drift, seeded
+    defect) then reads the same numbers with or without the Z24 download.
+    """
+
+    def __init__(self, nodes: List[int], fs: int = 100, duration_s: int = 600,
+                 seed: int = 0, rms_healthy: float = 0.05,
+                 ambient_f1: float = 0.0, ambient_amp: float = 0.0) -> None:
+        self.nodes = list(nodes)
+        self.fs = fs
+        self.chunk = _CHUNK
+        self.pos = 0
+        rng = np.random.default_rng(seed)
+        n = int(fs * duration_s)
+        t = np.arange(n) / fs
+        common = pink_noise(n, rng) * 0.6 * rms_healthy
+        self.signal: Dict[int, np.ndarray] = {}
+        for node in nodes:
+            base = common + pink_noise(n, rng) * rms_healthy
+            if ambient_f1 > 0 and ambient_amp > 0:
+                # standing first-mode response at the Z24 fundamental — strongest
+                # at mid-span (node 7), ~0 at the supports (nodes 6/8), matching
+                # the FEM mode shape.  Amplitude modest: an ambient deck hum,
+                # not damage.
+                wgt = 1.0 if node == 7 else 0.0
+                ph = rng.uniform(0.0, 2.0 * np.pi)
+                res = (np.sin(2.0 * np.pi * ambient_f1 * t + ph)
+                       + 0.5 * np.sin(4.0 * np.pi * ambient_f1 * t + 2.0 * ph))
+                res /= 1.12
+                base = base + ambient_amp * wgt * res
+            self.signal[node] = base
+
+    def current_window(self, node: int) -> np.ndarray:
+        i0 = (self.pos * self.chunk) % (len(self.signal[node]) - self.chunk)
+        return self.signal[node][i0:i0 + self.chunk]
+
+    def tick(self) -> None:
+        self.pos += 1
+
+
+class ModalResonancePlayer(StreamPlayer):
+    """Healthy base + a modal resonance at a (possibly time-varying) f1.
+
+    The D2-12 damage signature: a standing-wave response at the FEM first-mode
+    frequency of the CURRENT seeded-defect set (``f1_provider()`` Hz), with
+    harmonics at 2f/3f (1/k amplitude) and a phase accumulator so f1 can SLIDE
+    as the defect progresses — a softening structure, not a forced tone.  The
+    resonance is applied to every node (the standing wave is a whole-deck
+    response), which also keeps the always-on spectral-heuristic arc intact
+    (fusion averages the per-node anomaly scores).
+
+    ``f1_provider`` defaults to the FULLY-seeded Z24 f1 so standalone use (e.g.
+    the arc regression test) exercises the deepest defect.
+    """
+
+    def __init__(self, base: StreamPlayer, amp: float, fs: int = 100,
+                 seed: int = 7, harmonics: tuple = (1.0, 2.0, 3.0),
+                 f1_provider=None) -> None:
+        self.base = base
+        self.amp = float(amp)
+        self.fs = fs
+        self.harmonics = tuple(harmonics)
+        from models.vibration import seeded_defect as _sd
+        full = _sd.progress_from_alpha(1.0)
+        self.f1_provider = (f1_provider if f1_provider is not None
+                            else (lambda f=full: _sd.f1_of_progress(f)))
+        rng = np.random.default_rng(seed)
+        self._phase: Dict[int, float] = {node: rng.uniform(0.0, 2.0 * np.pi)
+                                         for node in getattr(base, "nodes", [])}
+
+    def current_window(self, node: int) -> np.ndarray:
+        w = self.base.current_window(node)
+        n = w.size
+        f1 = float(max(self.f1_provider(), 1.0))
+        t = np.arange(n) / self.fs + self._phase.setdefault(node, 0.0)
+        sig = np.zeros(n)
+        for i, h in enumerate(self.harmonics):
+            sig += (1.0 / (i + 1)) * np.sin(2.0 * np.pi * h * f1 * t)
+        sig /= 1.75  # normalise summed harmonics (~unit RMS)
+        self._phase[node] = self._phase.get(node, 0.0) + n / float(self.fs)
+        return w + self.amp * sig
+
+    def tick(self) -> None:
+        self.base.tick()
+
+
 class Z24Player(StreamPlayer):
     """Replay real benchmark segments (healthy or damage label subsets)."""
 
@@ -108,55 +199,38 @@ def _median_healthy_rms(X: np.ndarray, healthy_segs: List[int], nodes: List[int]
     return float(np.median(vals)) + 1e-12
 
 
-class Z24RupturePlayer(Z24Player):
-    """Real Z24 damage segments + a growing tendon-rupture modal signature.
+class Z24RupturePlayer(ModalResonancePlayer):
+    """Real Z24 damage segments + a modal resonance at the FEM-seeded f1.
 
     The benchmark's real damage classes (settlement, tendon rupture) manifest as
     modal-frequency drift that needs MINUTE-scale observation windows; a 10.24 s
     single-window snapshot of the raw damage segments is not reliably separable
     (measured: heavy healthy/damaged overlap for every tested detector).  So, in
-    the SAME way the plan models the rupture signature for the synthetic stream,
-    we superimpose a growing 4 Hz tonal + harmonics onto the real damage signal,
-    scaled to the bridge's OWN healthy RMS.  This is standard SHM *model-based
-    damage injection* for validating a detector you cannot test by breaking a
-    real bridge.  The healthy phase remains 100% real Z24 replay.
+    the SAME way the plan models the damage signature for the synthetic stream,
+    we superimpose a modal resonance at the seeded-defect f1 (D2-12) onto the
+    real damage signal, scaled to the bridge's OWN healthy RMS.  This is
+    standard SHM *model-based damage injection* for validating a detector you
+    cannot test by breaking a real bridge.  The healthy phase remains 100% real
+    Z24 replay.
     """
 
     def __init__(self, base: Z24Player, fs: int = 100, duration_s: int = 3600,
-                 rms_mult: float = 6.0, tones: tuple = (4.0, 8.0, 12.0),
-                 seed: int = 7, healthy_rms: float = 1e-4) -> None:
-        super().__init__(base.X, base.seg_indices, base.nodes, fs=fs)
-        self.base = base
-        self.rms_mult = float(rms_mult)
-        self.damage_tones = tuple(tones)
-        rng = np.random.default_rng(seed)
-        n = int(fs * duration_s)
-        t = np.arange(n) / fs
-        # gentle growth so the signature "develops" over a long demo
-        growth = 0.75 + 0.25 * np.clip(t / (duration_s * 0.8), 0.0, 1.0)
-        tonal = np.zeros(n)
-        for i, f in enumerate(self.damage_tones):
-            ph = rng.uniform(0.0, 2.0 * np.pi)
-            tonal += (1.0 / (i + 1)) * np.sin(2.0 * np.pi * f * t + ph)
-        tonal /= 1.75  # normalise summed harmonics (~unit RMS)
-        self._signature = (rms_mult * healthy_rms * growth * tonal).astype(np.float64)
-        self._sig_len = n - _CHUNK
-
-    def current_window(self, node: int) -> np.ndarray:
-        w = self.base.current_window(node)
-        i0 = (self.base.pos * _CHUNK) % self._sig_len
-        return w + self._signature[i0:i0 + _CHUNK]
-
-    def tick(self) -> None:
-        self.base.tick()
+                 rms_mult: float = 6.0, seed: int = 7,
+                 healthy_rms: float = 1e-4) -> None:
+        super().__init__(base, amp=rms_mult * float(healthy_rms), fs=fs, seed=seed)
 
 
-class SyntheticPlayer(StreamPlayer):
-    """Procedural fallback: pink-noise base + (for rupture) strong 4 Hz tonal.
+class SyntheticPlayer:
+    """Procedural fallback stream (healthy or seeded-defect rupture).
 
-    The rupture stream keeps its tonal at full strength from the start; the
-    *onset* (the progressive fade-in) is produced by the DamageInjector's ramp,
-    so the demo reads as a smoothly developing tendon-rupture signature.
+    * healthy  : pink-noise base + ambient first-mode resonance at 3.80 Hz
+                 (see SyntheticPinkBase) — the synthetic path's f1 self-baseline
+                 locks near the real Z24 healthy fundamental.
+    * rupture  : pink-noise base + a strong modal resonance at the FEM f1 of the
+                 seeded Z24 defect set (D2-12).  The onset (progressive EI loss
+                 -> f1 slide) is produced by the DamageInjector's ramp, so the
+                 demo reads as a smoothly developing seeded defect, not a forced
+                 tone.
 
     Each modeled channel is then passed through the DOCUMENTED synthetic
     measurement chain (D1-5): anti-alias lowpass -> bias drift -> transient
@@ -167,47 +241,43 @@ class SyntheticPlayer(StreamPlayer):
 
     def __init__(self, mode: str, nodes: List[int], fs: int = 100,
                  duration_s: int = 600, seed: int = 0,
-                 rms_healthy: float = 0.05, rms_damage: float = 0.55,
-                 damage_tones: tuple = (4.0, 8.0, 12.0)) -> None:
+                 rms_healthy: float = 0.05, rms_damage: float = 0.55) -> None:
         self.mode = mode
         self.nodes = list(nodes)
         self.fs = fs
         self.chunk = _CHUNK
         self.pos = 0
-        rng = np.random.default_rng(seed)
-        n = int(fs * duration_s)
-        t = np.arange(n) / fs
-        # shared low-frequency modal common-mode across the 3 channels
-        common = pink_noise(n, rng) * 0.6 * rms_healthy
-        base: Dict[int, np.ndarray] = {}
-        for node in nodes:
-            base[node] = common + pink_noise(n, rng) * rms_healthy
-        damage = np.zeros(n)
-        if mode == "rupture":
-            # tonal present at full-ish strength from t=0: the injector's ramp
-            # provides the progressive onset, so the rupture stream must already
-            # carry the 4 Hz signature. Slight slow growth for long demos.
-            growth = 0.75 + 0.25 * np.clip(t / (duration_s * 0.8), 0.0, 1.0)
-            tonal = np.zeros(n)
-            for i, f in enumerate(damage_tones):
-                ph = rng.uniform(0.0, 2.0 * np.pi)
-                tonal += (1.0 / (i + 1)) * np.sin(2.0 * np.pi * f * t + ph)
-            tonal /= 1.75  # normalise summed harmonics
-            damage = (rms_damage * growth * tonal)
-        # measurement chain applied per modeled channel (deterministic per node)
         from app import channel_models as cm
-        self.signal: Dict[int, np.ndarray] = {}
-        for node in nodes:
-            self.signal[node] = cm.model_measurement_chain(
-                base[node] + damage, node, fs=fs, duration_s=duration_s,
-                seed=seed * 100 + int(node))
+        if mode == "rupture":
+            base = SyntheticPinkBase(nodes, fs=fs, duration_s=duration_s,
+                                     seed=seed, rms_healthy=rms_healthy)
+            base.signal = {n: cm.model_measurement_chain(
+                base.signal[n], n, fs=fs, duration_s=duration_s,
+                seed=seed * 100 + int(n)) for n in nodes}
+            self.player = ModalResonancePlayer(base, amp=rms_damage, fs=fs,
+                                               seed=seed + 3)
+        else:
+            base = SyntheticPinkBase(nodes, fs=fs, duration_s=duration_s,
+                                     seed=seed, rms_healthy=rms_healthy,
+                                     ambient_f1=3.80, ambient_amp=0.30 * rms_healthy)
+            base.signal = {n: cm.model_measurement_chain(
+                base.signal[n], n, fs=fs, duration_s=duration_s,
+                seed=seed * 100 + int(n)) for n in nodes}
+            self.player = base
 
     def current_window(self, node: int) -> np.ndarray:
-        i0 = (self.pos * self.chunk) % (len(self.signal[node]) - self.chunk)
-        return self.signal[node][i0:i0 + self.chunk]
+        return self.player.current_window(node)
 
     def tick(self) -> None:
-        self.pos += 1
+        self.player.tick()
+
+    @property
+    def f1_provider(self):
+        return self.player.f1_provider
+
+    @f1_provider.setter
+    def f1_provider(self, fn) -> None:
+        self.player.f1_provider = fn
 
 
 def load_z24(data_dir: Path) -> tuple:
@@ -234,7 +304,14 @@ def load_z24(data_dir: Path) -> tuple:
 # damage injector
 # ---------------------------------------------------------------------------
 class DamageInjector:
-    """Cross-fades healthy/rupture streams; fires an impact pulse on onset."""
+    """Cross-fades healthy/rupture streams; fires an impact pulse on onset.
+
+    D2-12: the "rupture" stream carries a modal resonance at the FEM first-mode
+    frequency of the CURRENT seeded-defect set (Z24 progressive damage:
+    settlement -> cracking -> tendon rupture), so as the cross-fade alpha ramps
+    0->1 the measured f1 slides 3.80 -> ~3.2 Hz per the physics.  ``alpha`` is
+    the single source of truth for both the mix ratio AND the defect severity.
+    """
 
     def __init__(self, healthy: StreamPlayer, rupture: StreamPlayer, cfg: Settings,
                  bus: Optional[EventBus] = None, rng_seed: int = 7) -> None:
@@ -248,6 +325,21 @@ class DamageInjector:
         self._impact_rng = np.random.default_rng(rng_seed)
         self._rms_ema: Optional[float] = None
         self.alpha = 0.0
+        from models.vibration import seeded_defect as _sd
+        self._sd = _sd
+        # wire the rupture player's f1 to THIS injector's current defect state
+        self._wire_f1_provider()
+
+    def _wire_f1_provider(self) -> None:
+        inj = self
+
+        def _f1_now() -> float:
+            p = inj._sd.progress_from_alpha(inj.alpha)
+            return inj._sd.f1_of_progress(p)
+
+        prov = getattr(self.rupture, "f1_provider", None)
+        if callable(prov):
+            self.rupture.f1_provider = _f1_now
 
     def set_scenario(self, name: str) -> bool:
         name = str(name).strip().lower()
@@ -272,6 +364,11 @@ class DamageInjector:
         if self.scenario == "rupture":
             return float(np.clip(frac, 0.0, 1.0))
         return float(np.clip(1.0 - frac, 0.0, 1.0))
+
+    def seeded_state(self) -> dict:
+        """Current D2-12 seeded-defect narrative (progress, f1, EI loss, source)."""
+        p = self._sd.progress_from_alpha(self.alpha)
+        return self._sd.describe(p, f1_base=self._sd.overview()["f1_ref"])
 
     def current_window(self, node: int) -> np.ndarray:
         self.alpha = self._alpha_now()
@@ -384,6 +481,10 @@ class Simulator:
             except ValueError as exc:
                 log.warning("ignored control: %s", exc)
 
+    def seeded_state(self) -> dict:
+        """Current D2-12 seeded-defect narrative (for the REST endpoint)."""
+        return self.injector.seeded_state()
+
     # -- run loop -----------------------------------------------------------------
     def run(self) -> None:
         if not self.publisher.wait_connected(timeout=3.0):
@@ -419,7 +520,10 @@ class Simulator:
             if self.bus is not None:
                 self.bus.publish("control/status", {
                     "cmd": "alpha", "scenario": self.injector.scenario,
-                    "alpha": round(self.injector.alpha, 3), "ts": contract.now(),
+                    "alpha": round(self.injector.alpha, 3),
+                    # D2-12 seeded-defect narrative (progress, FEM f1, EI loss)
+                    "seeded": self.injector.seeded_state(),
+                    "ts": contract.now(),
                 })
 
             self.injector.tick()
@@ -434,6 +538,19 @@ class Simulator:
         self._stop.set()
         if self.bus is not None and self._control_token is not None:
             self.bus.unsubscribe(self._control_token)
+
+
+# --- module-level singleton (set by run_all, read by api) --------------------
+_simulator: Optional[Simulator] = None
+
+
+def set_simulator(s: "Simulator") -> None:
+    global _simulator
+    _simulator = s
+
+
+def get_simulator() -> Optional["Simulator"]:
+    return _simulator
 
 
 # ---------------------------------------------------------------------------

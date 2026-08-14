@@ -35,19 +35,23 @@ export const StoryControls = memo(function StoryControls({
   const setScenario = useStore((s) => s.setScenario)
   const replayCollapse = useStore((s) => s.replayCollapse)
   const stiffness = useStore((s) => s.stiffness)
+  const seeded = useStore((s) => s.seededDefect)
 
-  // Honest narrative per data path.  The offline replay synthesizes a modal
-  // f1 drop (3.8 -> 3.5 Hz) so the overlay shows "f1 falling"; the live Z24
-  // path's rupture is a forced 4 Hz tonal that does NOT shift the modal f1, so
-  // the overlay honestly reads "vibration anomaly" instead of a stiffness drop.
+  // Honest narrative per data path.  D2-12: the rupture arc is a SEEDED Z24
+  // defect (EI reduced in a named span zone -> the FEM first mode f1 slides
+  // 3.80 -> ~3.2 Hz), so the overlay reads a real stiffness loss with the exact
+  // defect label + seeded EI %.  No forced tonal in the modern path.
   const f1Dropped =
     stiffness.damagePct > 5 ||
     (stiffness.f1Meas > 0 && stiffness.f1Meas < stiffness.f1Ref * 0.97)
+  const seededActive = seeded.label && seeded.label !== 'none'
   const hint =
     scenario === 'rupture'
-      ? f1Dropped
-        ? 'STIFFNESS-LOSS ARC ACTIVE · f1 falling'
-        : 'VIBRATION ANOMALY · forced 4 Hz signature active'
+      ? seededActive
+        ? `SEEDED Z24 DEFECT · ${seeded.label.toUpperCase()} · EI -${Math.round(seeded.eiLossPct)}% · f1 ${seeded.f1Ref.toFixed(2)} -> ${seeded.f1.toFixed(2)} Hz`
+        : f1Dropped
+          ? 'STIFFNESS-LOSS ARC ACTIVE · f1 falling'
+          : 'VIBRATION ANOMALY · broadband signature active'
       : `SYSTEM NOMINAL · f1 ${stiffness.f1Meas ? stiffness.f1Meas.toFixed(1) : 3.8} Hz`
 
   return (

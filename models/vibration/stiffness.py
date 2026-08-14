@@ -22,6 +22,9 @@ Honesty notes (see vault/02-Research/Realistic-Digital-Twin §3, §4):
     cable-stay effects (we are deliberately NOT a cable-stayed deck).
   * Damage % is "model-inferred mid-span EI reduction", never a certified
     rating.  The empirical Z24/S101 anchor: −10% stiffness → ≈ −3% f1.
+  * Per-zone seeded defects (the demo's D2-12 damage scenario) are evaluated
+    by the SAME FEM through ``f1_of_profile`` / the ``seeded_defect`` module,
+    so the measured f1 shift and the model-inferred damage are one physics.
 
 The mapping below (mid-span EI −10% → f1 −2.2%, −30% → −7.3%) reproduces
 the Z24 evidence (its deepest progressive-damage scenarios shifted f1 by
@@ -125,6 +128,12 @@ def damage_profile(damage_frac: float) -> np.ndarray:
 def f1_of_damage(damage_frac: float) -> float:
     """FEM first mode under a mid-span stiffness loss (fraction 0..0.9)."""
     return float(fem_modes(damage_profile(damage_frac), n_modes=1)[0][0])
+
+
+def f1_of_profile(ei_profile: Optional[np.ndarray] = None) -> float:
+    """FEM first mode under an arbitrary per-element EI profile (seeded
+    defects, D2-12).  `None` = the calibrated healthy EI -> F1_REF."""
+    return float(fem_modes(ei_profile, n_modes=1)[0][0])
 
 
 def damage_from_f1(f1: float, lo: float = 0.0, hi: float = 0.9,

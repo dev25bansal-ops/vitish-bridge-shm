@@ -142,6 +142,7 @@ def main(argv=None) -> int:
 
     sim = sim_mod.Simulator(cfg, publisher, bus=bus, synthetic=args.synthetic,
                             scenario=args.scenario, loops=args.loops, rate=args.rate)
+    sim_mod.set_simulator(sim)   # D2-12: API reads the seeded-defect narrative
 
     driver = None
     if args.demo:

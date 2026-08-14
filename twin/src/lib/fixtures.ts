@@ -21,6 +21,30 @@ export function mulberry32(seed: number): () => number {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const smooth = (x: number) => x * x * (3 - 2 * x)
 
+/** D2-12 offline mirror of the seeded-defect narrative (replay fixture).
+ * The fixture's f1 drop (3.8 -> 3.5 Hz) is mapped onto the same Z24 staged
+ * campaign the live backend evaluates with the FEM (settlement -> cracking ->
+ * tendon rupture); EI loss follows the same f1 -> stiffness mapping. */
+function seededFixtureState(e: number, f1: number) {
+  const label =
+    e < 1e-6 ? 'none'
+      : e < 0.34 ? 'pier settlement -> cracks'
+        : e < 0.67 ? 'mid-span concrete cracking'
+          : 'tendon rupture'
+  const eiLoss = Math.round((1 - (f1 / 3.8) ** 2) * 1000) / 10
+  return {
+    active: [],
+    label,
+    source: e < 1e-6 ? '' : 'Z24 benchmark',
+    f1: Math.round(f1 * 100) / 100,
+    f1Ref: 3.8,
+    f1DriftPct: Math.round((f1 / 3.8 - 1) * 10000) / 100,
+    eiLoss,
+    perSpanLossPct: [0, eiLoss, 0] as [number, number, number],
+    note: 'offline replay fixture mirrors the live Z24 seeded-defect overlay',
+  }
+}
+
 // (name, lat, lng) — real-ish US locations for the 50-bridge fleet.
 const CITIES: Array<[string, number, number]> = [
   ['NYC East River', 40.78, -73.96],
@@ -206,6 +230,8 @@ export function startReplay(): () => void {
       baselineLocked: true,
       stale: false,
     })
+    // D2-12 seeded-defect narrative, offline mirror (label, EI loss, f1 slide).
+    useStore.getState().setSeededDefect(seededFixtureState(e, f1))
 
     // Scripted alert sequence during the rupture story arc.
     if (rupture && damageClock === 1) {

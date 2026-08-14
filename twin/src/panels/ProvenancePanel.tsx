@@ -26,9 +26,11 @@ const realLabel = (c: ChannelProvenance) =>
 export const ProvenancePanel = memo(function ProvenancePanel() {
   const manifest = useStore((s) => s.manifest)
   const stiffness = useStore((s) => s.stiffness)
+  const seeded = useStore((s) => s.seededDefect)
 
   const realCount = manifest.channels.filter((c) => c.real).length
   const modeledCount = manifest.channels.length - realCount
+  const seededActive = seeded.label && seeded.label !== 'none'
 
   return (
     <section className="panel">
@@ -95,6 +97,29 @@ export const ProvenancePanel = memo(function ProvenancePanel() {
       )}
       {stiffness.residualInterpretation && (
         <div className="thermal-note">{stiffness.residualInterpretation}</div>
+      )}
+
+      {seededActive && (
+        <div className="seeded-block">
+          <div className="block-title">Seeded defect · D2-12</div>
+          <div className="seeded-line">
+            <span className="meta-key">scenario</span>
+            <span className="meta-val">{seeded.label}</span>
+            {seeded.source && <span className="meta-unit">({seeded.source})</span>}
+          </div>
+          <div className="seeded-line">
+            <span className="meta-key">seeded EI</span>
+            <span className="meta-val">main span -{seeded.eiLossPct.toFixed(1)}%</span>
+            <span className="meta-unit">per-span {seeded.perSpanLossPct
+              .map((v) => `${v.toFixed(1)}%`).join(' / ')}</span>
+          </div>
+          <div className="seeded-line">
+            <span className="meta-key">f1</span>
+            <span className="meta-val">{seeded.f1.toFixed(2)} Hz</span>
+            <span className="meta-unit">drift {seeded.f1DriftPct.toFixed(1)}% vs {seeded.f1Ref.toFixed(2)} Hz</span>
+          </div>
+          <div className="seeded-note">{seeded.note}</div>
+        </div>
       )}
     </section>
   )

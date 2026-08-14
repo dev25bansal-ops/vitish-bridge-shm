@@ -188,6 +188,22 @@ def create_app() -> FastAPI:
                     "note": "start the stack (python -m app.run_all)"}
         return tracker.snapshot()
 
+    @app.get("/api/bridge/{bridge_id}/seeded-defect")
+    def seeded_defect(bridge_id: str) -> dict:
+        """D2-12 seeded-defect narrative: the demo damage scenario as a named,
+        physically-grounded EI loss (Z24/S101 benchmark), the FEM f1 it implies,
+        and the per-span EI reduction % that was seeded.  Honest by design: the
+        loss is the MODEL's injected ground truth, never a claim about the real
+        bridge (see the returned ``note``)."""
+        if bridge_id != settings.bridge_id:
+            raise HTTPException(status_code=404, detail="no seeded-defect model for this bridge")
+        from app import simulator as sim_mod
+        sim = sim_mod.get_simulator()
+        if sim is None:
+            return {"error": "simulator not running",
+                    "note": "start the stack (python -m app.run_all --demo)"}
+        return sim.seeded_state()
+
     @app.get("/api/bridge/{bridge_id}/deterioration")
     def deterioration(bridge_id: str, years: int = Query(30, ge=1, le=100),
                       rating: str = Query("super", pattern="^(super|sub)$")) -> dict:
@@ -327,7 +343,7 @@ def run(host: Optional[str] = None, port: Optional[int] = None) -> None:
             # port busy -> walk upward to the first free one
             alt = _find_free_port(host, port + 1)
             if alt is not None:
-                print(f"[warn] API port {port} busy — using {alt} instead")
+                print(f"[warn] API port {port} busy -- using {alt} instead")
                 port = alt
     except OSError:
         pass

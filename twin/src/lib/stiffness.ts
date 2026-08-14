@@ -4,17 +4,22 @@
 // overlay (measured f1, EI drift, model-inferred damage %, FEM mode shapes) is
 // a slower-changing explainability layer, so a light poll is honest and simple.
 //
+// Also pulls the D2-12 seeded-defect narrative (GET /api/bridge/z24/seeded-defect)
+// on the same cadence — what the demo scenario injected (named Z24/S101 EI
+// loss, FEM f1, per-span loss %) — so the overlay explains the arc as it runs.
+//
 // Falls back to the analytic reference silently: if the backend is down, the
 // store keeps its default (f1 3.8 Hz, no drift) and the mode animation falls
 // back to the reference simple-span sine (scene/collapse.ts).
 import { useStore } from '../store'
 
 const STIFFNESS_URL = 'http://127.0.0.1:8000/api/bridge/z24/stiffness'
+const SEEDED_URL = 'http://127.0.0.1:8000/api/bridge/z24/seeded-defect'
 const POLL_MS = 1500
 
 let timer: ReturnType<typeof setInterval> | null = null
 
-async function poll(): Promise<void> {
+async function pollStiffness(): Promise<void> {
   try {
     const res = await fetch(STIFFNESS_URL)
     if (!res.ok) return
@@ -57,6 +62,49 @@ async function poll(): Promise<void> {
   } catch {
     // backend unreachable — replay/reference fallback stays in effect
   }
+}
+
+async function pollSeeded(): Promise<void> {
+  try {
+    const res = await fetch(SEEDED_URL)
+    if (!res.ok) return
+    const s = (await res.json()) as Record<string, unknown>
+    if (typeof s.f1 !== 'number') return
+    const active = Array.isArray(s.active)
+      ? (s.active as Array<Record<string, unknown>>).map((d) => ({
+          key: String(d.key ?? ''),
+          short: String(d.short ?? ''),
+          source: String(d.source ?? ''),
+          progress: typeof d.progress === 'number' ? (d.progress as number) : 0,
+          eiLossPct: typeof d.ei_loss_pct === 'number'
+            ? (d.ei_loss_pct as number)
+            : 0,
+          zone: Array.isArray(d.zone)
+            ? (d.zone as [number, number])
+            : ([0, 0] as [number, number]),
+        }))
+      : []
+    useStore.getState().setSeededDefect({
+      active,
+      label: typeof s.label === 'string' ? s.label : 'none',
+      source: typeof s.source === 'string' ? s.source : '',
+      f1: s.f1 as number,
+      f1Ref: (s.f1_ref as number) ?? 3.8,
+      f1DriftPct: (s.f1_drift_pct as number) ?? 0,
+      eiLossPct: (s.ei_loss_pct as number) ?? 0,
+      perSpanLossPct: Array.isArray(s.per_span_loss_pct)
+        ? (s.per_span_loss_pct as [number, number, number])
+        : ([0, 0, 0] as [number, number, number]),
+      note: typeof s.note === 'string' ? s.note : '',
+    })
+  } catch {
+    // backend unreachable — replay/reference fallback stays in effect
+  }
+}
+
+async function poll(): Promise<void> {
+  await pollStiffness()
+  await pollSeeded()
 }
 
 export function startStiffnessPolling(): void {

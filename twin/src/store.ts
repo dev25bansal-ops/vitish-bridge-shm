@@ -91,6 +91,33 @@ export interface Alert {
   recommendation?: string
 }
 
+/** One active seeded defect (D2-12, see models/vibration/seeded_defect.py). */
+export interface SeededDefect {
+  key: string
+  short: string
+  source: string
+  progress: number // 0..1 severity staged in
+  eiLossPct: number // this defect's EI reduction at current progress (%)
+  zone: [number, number] // x-range (m) over which EI is reduced
+}
+
+/**
+ * D2-12 seeded-defect narrative — what the demo scenario actually injected.
+ * The EI loss is the MODEL's seeded ground truth, never a claim about the real
+ * bridge (see models/vibration/seeded_defect.py `describe`).
+ */
+export interface SeededDefectState {
+  active: SeededDefect[]
+  label: string // dominant defect short label, or 'none'
+  source: string // 'Z24 benchmark' | 'S101 benchmark'
+  f1: number // FEM first mode under the current defect set (Hz)
+  f1Ref: number // healthy baseline f1 (Hz)
+  f1DriftPct: number // % f1 drift vs baseline
+  eiLossPct: number // worst-span seeded EI loss (%)
+  perSpanLossPct: [number, number, number] // left / main / right span
+  note: string
+}
+
 /** D2-11 Markov projection row (see backend/app/deterioration.py). */
 export interface DeteriorationRow {
   year: number
@@ -120,6 +147,7 @@ export interface TwinState {
   selectedSensorId: number | null
   live: LiveState
   stiffness: StiffnessState
+  seededDefect: SeededDefectState
   manifest: ManifestState
   deterioration: DeteriorationState
   spectrum: number[]
@@ -134,6 +162,7 @@ export interface TwinState {
   setSelectedSensorId: (id: number | null) => void
   setLive: (patch: Partial<LiveState>) => void
   setStiffness: (s: Partial<StiffnessState>) => void
+  setSeededDefect: (s: Partial<SeededDefectState>) => void
   setManifest: (m: Partial<ManifestState>) => void
   setDeterioration: (d: Partial<DeteriorationState>) => void
   setSpectrum: (s: number[]) => void
@@ -183,6 +212,19 @@ const STIFFNESS_EMPTY: StiffnessState = {
   stale: true,
 }
 
+/** Honest "no narrative yet" default until the backend reports the seeded set. */
+const SEEDED_DEFECT_EMPTY: SeededDefectState = {
+  active: [],
+  label: 'none',
+  source: '',
+  f1: 3.8,
+  f1Ref: 3.8,
+  f1DriftPct: 0,
+  eiLossPct: 0,
+  perSpanLossPct: [0, 0, 0],
+  note: 'seeded-defect narrative not available (backend unreachable)',
+}
+
 /** Honest offline default until the manifest poller reports back. */
 const MANIFEST_OFFLINE: ManifestState = {
   dataSource: 'offline',
@@ -217,6 +259,7 @@ export const useStore = create<TwinState>((set, get) => ({
   selectedSensorId: null,
   live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: 3.8, flag: 0 },
   stiffness: STIFFNESS_EMPTY,
+  seededDefect: SEEDED_DEFECT_EMPTY,
   manifest: MANIFEST_OFFLINE,
   deterioration: DETERIORATION_EMPTY,
   spectrum: [],
@@ -244,6 +287,9 @@ export const useStore = create<TwinState>((set, get) => ({
   },
 
   setStiffness: (patch) => set({ stiffness: { ...get().stiffness, ...patch } }),
+
+  setSeededDefect: (patch) =>
+    set({ seededDefect: { ...get().seededDefect, ...patch } }),
 
   setManifest: (patch) => set({ manifest: { ...get().manifest, ...patch } }),
 
