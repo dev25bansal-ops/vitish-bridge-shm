@@ -21,10 +21,16 @@ export function SourceBadge() {
 
 interface StoryControlsProps {
   onToggleMap: () => void
+  geoView: boolean
+  onToggleGeo: () => void
 }
 
-/** Storyboard controls: drive the collapse scenario + map visibility. */
-export const StoryControls = memo(function StoryControls({ onToggleMap }: StoryControlsProps) {
+/** Storyboard controls: drive the collapse scenario + map/geo view visibility. */
+export const StoryControls = memo(function StoryControls({
+  onToggleMap,
+  geoView,
+  onToggleGeo,
+}: StoryControlsProps) {
   const scenario = useStore((s) => s.scenario)
   const setScenario = useStore((s) => s.setScenario)
   const replayCollapse = useStore((s) => s.replayCollapse)
@@ -69,6 +75,13 @@ export const StoryControls = memo(function StoryControls({ onToggleMap }: StoryC
         </button>
         <button className="story-btn" onClick={onToggleMap}>
           Toggle map
+        </button>
+        <button
+          className={`story-btn${geoView ? ' active' : ''}`}
+          onClick={onToggleGeo}
+          title="Real terrain + Google Photorealistic 3D Tiles at the Z24 reference site (Cesium ion)"
+        >
+          {geoView ? '3D view' : 'Geo view'}
         </button>
       </div>
       <div className={`scenario-hint ${scenario === 'rupture' ? 'rupture' : ''}`}>

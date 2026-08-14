@@ -1128,3 +1128,93 @@ button {
   color: var(--muted);
   margin-top: 2px;
 }
+
+/* --- D2-7 georeferenced context view (Cesium) ------------------------------ */
+.geo-shell {
+  position: absolute;
+  inset: 0;
+  background: #0e1c2c;
+}
+
+.geo-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.geo-canvas .cesium-viewer,
+.geo-canvas .cesium-widget,
+.geo-canvas .cesium-widget canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.geo-canvas .cesium-viewer-bottom {
+  display: none; /* ion credits are small; keep the view clean for the demo */
+}
+
+.geo-caption {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.geo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text);
+  background: #ffffffd9;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.geo-chip b {
+  font-weight: 700;
+}
+
+.geo-chip-title {
+  color: #0f766e;
+  border-color: #99f6e4;
+  background: #f0fdfae8;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.geo-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #f8fafc;
+  z-index: 4;
+  text-align: center;
+  padding: 24px;
+}
+
+.geo-fallback-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
+.geo-fallback-msg {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  max-width: 420px;
+  line-height: 1.5;
+}

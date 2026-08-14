@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { TwinCanvas } from './scene/TwinCanvas'
 import { SceneOverlay } from './scene/SceneOverlay'
+import { GeoContext } from './scene/GeoContext'
 import { BridgeMap } from './map/BridgeMap'
 import { HealthPanel } from './panels/HealthPanel'
 import { DeteriorationPanel } from './panels/DeteriorationPanel'
@@ -13,6 +14,7 @@ import { useStore } from './store'
 
 export default function App() {
   const [showMap, setShowMap] = useState(true)
+  const [geoView, setGeoView] = useState(false)
   const selectedBridgeId = useStore((s) => s.selectedBridgeId)
   const bridges = useStore((s) => s.bridges)
   const liveBhi = useStore((s) => s.live.bhi)
@@ -52,8 +54,14 @@ export default function App() {
           </aside>
         )}
         <main className="hud-center">
-          <TwinCanvas />
-          <SceneOverlay />
+          {geoView ? (
+            <GeoContext />
+          ) : (
+            <>
+              <TwinCanvas />
+              <SceneOverlay />
+            </>
+          )}
         </main>
         <aside className="hud-right">
           <HealthPanel />
@@ -65,7 +73,11 @@ export default function App() {
       </div>
 
       <footer className="hud-bottom">
-        <StoryControls onToggleMap={() => setShowMap((v) => !v)} />
+        <StoryControls
+          onToggleMap={() => setShowMap((v) => !v)}
+          geoView={geoView}
+          onToggleGeo={() => setGeoView((v) => !v)}
+        />
       </footer>
     </div>
   )

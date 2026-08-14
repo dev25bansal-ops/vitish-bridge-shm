@@ -59,6 +59,13 @@ docker-data/
 .verify/cf_readme.txt
 .verify/cj.txt
 .verify/sut_loaders.py
+# Headless-browser verification artifacts (screenshots/DOM dumps can carry
+# transient Cesium ion URLs — never commit them)
+.verify/*.log
+.verify/*.png
+.verify/*.jpg
+.verify/*_dom.html
+.verify/geo_verify.cjs
 
 # OS
 Thumbs.db
