@@ -54,6 +54,7 @@ def _banner(cfg: Settings, store, sim: sim_mod.Simulator, demo: bool,
     print(f"    /api/bridges")
     print(f"    /api/bridges/geojson")
     print(f"    /api/live              (live MQTT feed status — with --live)")
+    print(f"    /api/manifest           (D1-5 data-realism manifest)")
     print(f"    /api/bridge/{cfg.bridge_id}/history?metric=bhi|rms")
     print(f"    /api/bridge/{cfg.bridge_id}/state")
     print(f"    POST /api/demo/scenario  {{\"scenario\": \"healthy|rupture\"}}")

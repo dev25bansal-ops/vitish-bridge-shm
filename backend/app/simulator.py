@@ -157,6 +157,12 @@ class SyntheticPlayer(StreamPlayer):
     The rupture stream keeps its tonal at full strength from the start; the
     *onset* (the progressive fade-in) is produced by the DamageInjector's ramp,
     so the demo reads as a smoothly developing tendon-rupture signature.
+
+    Each modeled channel is then passed through the DOCUMENTED synthetic
+    measurement chain (D1-5): anti-alias lowpass -> bias drift -> transient
+    spikes -> ADC quantization.  The manifest (``app/channel_models``) describes
+    exactly this chain, so the synthetic stream's realism parameters are never
+    aspirational.
     """
 
     def __init__(self, mode: str, nodes: List[int], fs: int = 100,
@@ -173,9 +179,10 @@ class SyntheticPlayer(StreamPlayer):
         t = np.arange(n) / fs
         # shared low-frequency modal common-mode across the 3 channels
         common = pink_noise(n, rng) * 0.6 * rms_healthy
-        self.base: Dict[int, np.ndarray] = {}
+        base: Dict[int, np.ndarray] = {}
         for node in nodes:
-            self.base[node] = common + pink_noise(n, rng) * rms_healthy
+            base[node] = common + pink_noise(n, rng) * rms_healthy
+        damage = np.zeros(n)
         if mode == "rupture":
             # tonal present at full-ish strength from t=0: the injector's ramp
             # provides the progressive onset, so the rupture stream must already
@@ -186,13 +193,18 @@ class SyntheticPlayer(StreamPlayer):
                 ph = rng.uniform(0.0, 2.0 * np.pi)
                 tonal += (1.0 / (i + 1)) * np.sin(2.0 * np.pi * f * t + ph)
             tonal /= 1.75  # normalise summed harmonics
-            self.damage = (rms_damage * growth * tonal)
-        else:
-            self.damage = np.zeros(n)
+            damage = (rms_damage * growth * tonal)
+        # measurement chain applied per modeled channel (deterministic per node)
+        from app import channel_models as cm
+        self.signal: Dict[int, np.ndarray] = {}
+        for node in nodes:
+            self.signal[node] = cm.model_measurement_chain(
+                base[node] + damage, node, fs=fs, duration_s=duration_s,
+                seed=seed * 100 + int(node))
 
     def current_window(self, node: int) -> np.ndarray:
-        i0 = (self.pos * self.chunk) % (len(self.base[node]) - self.chunk)
-        return self.base[node][i0:i0 + self.chunk] + self.damage[i0:i0 + self.chunk]
+        i0 = (self.pos * self.chunk) % (len(self.signal[node]) - self.chunk)
+        return self.signal[node][i0:i0 + self.chunk]
 
     def tick(self) -> None:
         self.pos += 1
@@ -310,6 +322,8 @@ class Simulator:
         self.data_source = "synthetic"
         self.players: Dict[str, StreamPlayer] = {}
         self._build_players()
+        from app import channel_models as cm
+        cm.set_data_source(self.data_source)
 
         self.injector = DamageInjector(self.players["healthy"], self.players["rupture"],
                                        cfg, bus)

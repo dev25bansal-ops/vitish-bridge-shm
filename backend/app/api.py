@@ -129,6 +129,18 @@ def create_app() -> FastAPI:
         st["hero_bridge_untouched"] = True  # live-demo is never fused into z24 BHI
         return st
 
+    @app.get("/api/manifest")
+    def data_manifest() -> dict:
+        """D1-5 data-realism manifest — what each channel actually is (real
+        Z24 replay vs modeled synthetic), the documented measurement chain, and
+        the honesty labels the provenance UI (D1-6) reads."""
+        from app import channel_models as cm
+        feed = live_mod.get_live_feed()
+        return cm.build_manifest(
+            settings, cm.get_data_source(),
+            live_active=feed is not None,
+            live_status=feed.status() if feed else None)
+
     @app.get("/api/bridges")
     def bridges() -> dict:
         hero = _live_hero_state()
