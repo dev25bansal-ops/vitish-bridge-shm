@@ -91,6 +91,28 @@ export interface Alert {
   recommendation?: string
 }
 
+/** D2-11 Markov projection row (see backend/app/deterioration.py). */
+export interface DeteriorationRow {
+  year: number
+  expected: number
+  p10: number
+  p90: number
+  p_poor: number
+  dist: number[]
+}
+
+/** D2-11 deterioration payload from GET /api/bridge/z24/deterioration. */
+export interface DeteriorationState {
+  currentBhi: number
+  currentCondition: number
+  priorsLabel: string
+  note: string
+  nextInspectionYear: number | null
+  nextInspectionRule: string
+  projection: DeteriorationRow[]
+  rating: string
+}
+
 export interface TwinState {
   bridges: Bridge[]
   sensors: Sensor[]
@@ -99,6 +121,7 @@ export interface TwinState {
   live: LiveState
   stiffness: StiffnessState
   manifest: ManifestState
+  deterioration: DeteriorationState
   spectrum: number[]
   bhiTrend: number[]
   alerts: Alert[]
@@ -112,6 +135,7 @@ export interface TwinState {
   setLive: (patch: Partial<LiveState>) => void
   setStiffness: (s: Partial<StiffnessState>) => void
   setManifest: (m: Partial<ManifestState>) => void
+  setDeterioration: (d: Partial<DeteriorationState>) => void
   setSpectrum: (s: number[]) => void
   pushAlert: (a: Omit<Alert, 'id' | 'ts'>) => void
   setWsStatus: (s: WsStatus) => void
@@ -169,6 +193,18 @@ const MANIFEST_OFFLINE: ManifestState = {
   liveFeedBridge: '',
 }
 
+/** Honest "no data yet" default — the panel shows the offline label. */
+const DETERIORATION_EMPTY: DeteriorationState = {
+  currentBhi: 87,
+  currentCondition: 8,
+  priorsLabel: 'Markov projection not available (backend unreachable)',
+  note: '',
+  nextInspectionYear: null,
+  nextInspectionRule: '',
+  projection: [],
+  rating: 'super',
+}
+
 export const useStore = create<TwinState>((set, get) => ({
   bridges: [],
   sensors: [
@@ -182,6 +218,7 @@ export const useStore = create<TwinState>((set, get) => ({
   live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: 3.8, flag: 0 },
   stiffness: STIFFNESS_EMPTY,
   manifest: MANIFEST_OFFLINE,
+  deterioration: DETERIORATION_EMPTY,
   spectrum: [],
   bhiTrend: [],
   alerts: [],
@@ -209,6 +246,9 @@ export const useStore = create<TwinState>((set, get) => ({
   setStiffness: (patch) => set({ stiffness: { ...get().stiffness, ...patch } }),
 
   setManifest: (patch) => set({ manifest: { ...get().manifest, ...patch } }),
+
+  setDeterioration: (patch) =>
+    set({ deterioration: { ...get().deterioration, ...patch } }),
 
   setSpectrum: (spectrum) => set({ spectrum }),
 

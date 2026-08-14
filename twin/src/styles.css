@@ -1084,3 +1084,47 @@ button {
 .scene-caption-dot.stale {
   background: #9ca3af;
 }
+
+/* --- D2-11 Markov + Bayesian-updating condition panel ----------------------- */
+.det-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.det-stat {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 4px;
+  text-align: center;
+}
+
+.det-label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.det-value {
+  display: block;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.det-chart-wrap {
+  margin-bottom: 6px;
+}
+
+.det-chart-note {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 2px;
+}

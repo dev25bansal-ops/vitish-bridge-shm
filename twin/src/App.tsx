@@ -3,6 +3,7 @@ import { TwinCanvas } from './scene/TwinCanvas'
 import { SceneOverlay } from './scene/SceneOverlay'
 import { BridgeMap } from './map/BridgeMap'
 import { HealthPanel } from './panels/HealthPanel'
+import { DeteriorationPanel } from './panels/DeteriorationPanel'
 import { AlertsPanel } from './panels/AlertsPanel'
 import { CopilotPanel } from './panels/CopilotPanel'
 import { ProvenancePanel } from './panels/ProvenancePanel'
@@ -56,6 +57,7 @@ export default function App() {
         </main>
         <aside className="hud-right">
           <HealthPanel />
+          <DeteriorationPanel />
           <AlertsPanel />
           <CopilotPanel />
           <ProvenancePanel />

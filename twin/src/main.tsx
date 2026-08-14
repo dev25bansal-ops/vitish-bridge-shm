@@ -4,6 +4,7 @@ import App from './App'
 import { connect } from './lib/ws'
 import { startStiffnessPolling } from './lib/stiffness'
 import { startManifestPolling } from './lib/manifest'
+import { startDeteriorationPolling } from './lib/deterioration'
 import './styles.css'
 
 // One-shot: try the live WebSocket bridge; fall back to offline replay on
@@ -18,6 +19,10 @@ startStiffnessPolling()
 // D1-5 data-realism manifest (real vs modeled per channel) — slow poll, honest
 // offline default when the backend is unreachable.
 startManifestPolling()
+
+// D2-11 LTBP Markov projection (Bayesian-updating condition curve) — slow poll,
+// honest offline default when the backend is unreachable.
+startDeteriorationPolling()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
