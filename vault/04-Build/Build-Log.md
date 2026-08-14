@@ -48,7 +48,10 @@ Details: [[36h-Build-Plan]].
 - ✅ Backend pipeline, ML models, digital twin built (4-agent build workflow)
 - ✅ **End-to-end integration verified** — simulator→MQTT→subscriber→bus→WS/API→twin live; story runs 87 GREEN → RED → alert → copilot
 - ✅ Smoke tests green (backend 83/83 · models 19/19); twin `npm run build` clean
-- 🔜 **Next**: 6-minute demo rehearsal ([[Storyboard]] timeline), real Z24 training (stretch), [[Pre-Hackathon-Checklist]]
+- ✅ **Real-data phase complete** — all real datasets (Z24 / CrackSeg9k / HBTA / dacl10k / SDNET2018 / CRACK500), real `crack_seg.pt` (YOLO26s-seg), LSTM-AE trained on real Z24
+- ✅ **2-day realism plan COMPLETE** — D1-1..D1-6 + D2-7..D2-12 all done; **8 gates / 291 checks, exit 0**; dry-run verified BHI 87.1 → crack 77.7 → AMBER 54 → RED 33.6, no flicker
+- ✅ **Finish phase done** — YC-facing README + re-verified Storyboard; **project complete & demo-ready** (`cd backend && python -m app.run_all --demo` + `cd twin && npm run dev`)
+- 🔜 Demo rehearsal per [[Storyboard]] (timeline locked), [[Pre-Hackathon-Checklist]]
 
 Related: [[Team]] · [[Data-Pipeline]] · [[CV-Model]] · [[Vibration-Model]] · [[Digital-Twin]]
 
