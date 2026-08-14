@@ -73,6 +73,7 @@ export const SensorMarkers = memo(function SensorMarkers() {
     const t = state.clock.elapsedTime
     const st = useStore.getState()
     const live = st.live
+    const now = Date.now()
     const pulse =
       live.flag === 1 || live.state === 'RED' ? 1 + 0.3 * Math.abs(Math.sin(t * 6)) : 1
 
@@ -83,11 +84,15 @@ export const SensorMarkers = memo(function SensorMarkers() {
       const y = deckYAt(sn.x) + wobble(sn.x, t) + offset
       const sway = collapseState.cascade * 0.25 * Math.sin(t * 4 + i * 1.7)
       tmpP.set(sn.x, y, sn.z + sway)
-      const scale = 1.35 * pulse
+      // D2-9: a node that reported and then went quiet > 4 s turns GREY —
+      // never invent a health colour for data we no longer have.
+      const seen = st.nodeSeen[sn.node]
+      const stale = seen !== undefined && now - seen > 4000
+      const scale = 1.35 * pulse * (stale ? 0.85 : 1)
       tmpS.set(scale, scale, scale)
       tmpM.compose(tmpP, IDENT_Q, tmpS)
       m.setMatrixAt(i, tmpM)
-      m.setColorAt(i, tmpC.set(stateHex(sensorHealth(i))))
+      m.setColorAt(i, tmpC.set(stale ? '#9ca3af' : stateHex(sensorHealth(i))))
     }
 
     // fleet markers

@@ -61,6 +61,7 @@ function ingest(payload: unknown): void {
     const samples = (p.samples as number[]).map(Number)
     const rms = typeof p.rms === 'number' ? p.rms : rmsOf(samples)
     const flag = typeof p.flag === 'number' ? p.flag : 0
+    if (typeof p.node === 'number') s.setNodeSeen(p.node, Date.now()) // D2-9 staleness
     s.setSpectrum(spectrumMagnitudes(samples, 512, 256))
     s.setLive({ rms: Math.round(rms * 1000) / 1000, flag })
     return

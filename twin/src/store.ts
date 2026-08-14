@@ -105,6 +105,8 @@ export interface TwinState {
   wsStatus: WsStatus
   scenario: Scenario
   collapseEpoch: number
+  /** D2-9 per-node last-seen (ms epoch) for stale-sensor glyphs. */
+  nodeSeen: Record<number, number>
   setSelectedBridgeId: (id: string) => void
   setSelectedSensorId: (id: number | null) => void
   setLive: (patch: Partial<LiveState>) => void
@@ -116,6 +118,7 @@ export interface TwinState {
   setScenario: (s: Scenario) => void
   setCollapseEpoch: (n: number) => void
   replayCollapse: () => void
+  setNodeSeen: (node: number, ms: number) => void
 }
 
 // --- contract constants (kept in sync with backend/app/contract.py) ---------
@@ -185,6 +188,7 @@ export const useStore = create<TwinState>((set, get) => ({
   wsStatus: 'connecting',
   scenario: 'healthy',
   collapseEpoch: 0,
+  nodeSeen: {},
 
   setSelectedBridgeId: (id) => set({ selectedBridgeId: id }),
   setSelectedSensorId: (id) => set({ selectedSensorId: id }),
@@ -217,4 +221,6 @@ export const useStore = create<TwinState>((set, get) => ({
   setScenario: (scenario) => set({ scenario }),
   setCollapseEpoch: (collapseEpoch) => set({ collapseEpoch }),
   replayCollapse: () => set((st) => ({ scenario: 'rupture', collapseEpoch: st.collapseEpoch + 1 })),
+  setNodeSeen: (node, ms) =>
+    set((st) => ({ nodeSeen: st.nodeSeen[node] === ms ? st.nodeSeen : { ...st.nodeSeen, [node]: ms } })),
 }))

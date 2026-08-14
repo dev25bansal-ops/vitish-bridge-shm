@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { TwinCanvas } from './scene/TwinCanvas'
+import { SceneOverlay } from './scene/SceneOverlay'
 import { BridgeMap } from './map/BridgeMap'
 import { HealthPanel } from './panels/HealthPanel'
 import { AlertsPanel } from './panels/AlertsPanel'
 import { CopilotPanel } from './panels/CopilotPanel'
 import { ProvenancePanel } from './panels/ProvenancePanel'
+import { SimClockBadge } from './panels/SimClockBadge'
 import { SourceBadge, StoryControls } from './panels/StoryControls'
 import { useStore } from './store'
 
@@ -37,6 +39,7 @@ export default function App() {
         </div>
         <div className="top-right">
           <SourceBadge />
+          <SimClockBadge />
           <span className="top-window">window 10.24 s · fs 100 Hz</span>
         </div>
       </header>
@@ -49,6 +52,7 @@ export default function App() {
         )}
         <main className="hud-center">
           <TwinCanvas />
+          <SceneOverlay />
         </main>
         <aside className="hud-right">
           <HealthPanel />

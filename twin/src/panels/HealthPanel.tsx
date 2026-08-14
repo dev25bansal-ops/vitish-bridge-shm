@@ -82,9 +82,17 @@ export const HealthPanel = memo(function HealthPanel() {
   const live = useStore((s) => s.live)
   const bhiTrend = useStore((s) => s.bhiTrend)
 
+  // D2-9: uncertainty envelope on the trend — the current measurement
+  // uncertainty u (±) is drawn as a band around every point, honestly labeled.
   const trendData = useMemo(
-    () => bhiTrend.slice(-60).map((v, i) => ({ i, v })),
-    [bhiTrend],
+    () =>
+      bhiTrend.slice(-60).map((v, i) => ({
+        i,
+        v,
+        lo: Math.max(0, v - live.u),
+        hi: Math.min(100, v + live.u),
+      })),
+    [bhiTrend, live.u],
   )
 
   return (
@@ -119,7 +127,7 @@ export const HealthPanel = memo(function HealthPanel() {
       </div>
 
       <div className="trend-block">
-        <div className="block-title">BHI trend · last {trendData.length}</div>
+        <div className="block-title">BHI trend · last {trendData.length} (shaded = ±u)</div>
         {trendData.length > 1 ? (
           <ResponsiveContainer width="100%" height={110}>
             <AreaChart data={trendData} margin={{ top: 6, right: 2, left: 2, bottom: 0 }}>
@@ -127,6 +135,10 @@ export const HealthPanel = memo(function HealthPanel() {
                 <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#0d9488" stopOpacity={0.5} />
                   <stop offset="100%" stopColor="#0d9488" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="uncBandGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0d9488" stopOpacity={0.18} />
+                  <stop offset="100%" stopColor="#0d9488" stopOpacity={0.05} />
                 </linearGradient>
               </defs>
               <XAxis dataKey="i" hide />
@@ -138,6 +150,23 @@ export const HealthPanel = memo(function HealthPanel() {
               />
               <ReferenceLine y={BHI_GREEN} stroke="#16a34a" strokeDasharray="4 3" strokeOpacity={0.5} />
               <ReferenceLine y={BHI_AMBER} stroke="#d97706" strokeDasharray="4 3" strokeOpacity={0.5} />
+              {/* uncertainty band (±u) behind the trend line */}
+              <Area
+                type="monotone"
+                dataKey="hi"
+                stroke="none"
+                fill="url(#uncBandGrad)"
+                dot={false}
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="lo"
+                stroke="none"
+                fill="#ffffff"
+                dot={false}
+                isAnimationActive={false}
+              />
               <Area
                 type="monotone"
                 dataKey="v"

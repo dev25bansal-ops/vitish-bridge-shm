@@ -166,8 +166,12 @@ export function startReplay(): () => void {
     const rms = Math.sqrt(sumSq / N)
     const flag = rupture && rand() < 0.45 ? 1 : 0
     const spec = spectrumMagnitudes(samples, 512, 256)
-    useStore.getState().setSpectrum(spec)
-    useStore.getState().setLive({ rms: Math.round(rms * 1000) / 1000, freq: f1, flag })
+    // D2-9 staleness: offline replay streams all three nodes every second
+    s.setNodeSeen(6, Date.now())
+    s.setNodeSeen(7, Date.now())
+    s.setNodeSeen(8, Date.now())
+    s.setSpectrum(spec)
+    s.setLive({ rms: Math.round(rms * 1000) / 1000, freq: f1, flag })
   }
 
   const emitBhi = () => {
