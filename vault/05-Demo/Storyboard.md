@@ -17,14 +17,16 @@ Total 6:00. **Everything shown by minute 2:00.** All wording approved — do not
 | 5:00–5:30 | **Future work** | "Cable strain + acoustic sensing to close the corrosion blind spot. Federated learning across a bridge network without sharing raw data." |
 | 5:30–6:00 | **Close** | "This is what the next Morbi looks like — and this is the system that catches it before the news does." |
 
-## Verified demo numbers (measured 2026-08-13, real Z24 replay)
+## Verified demo numbers (measured 2026-08-14, real Z24 replay, D2-12 seeded-defect arc)
 
 So the presenter is never surprised by the live gauge:
 
-- **Healthy phase**: BHI starts **87** (fusion initial state) then settles **73–79 GREEN** on real Z24 (vib 0.12–0.20) — "strong, healthy bridge" is honest.
-- **80 s**: rupture onset detected → **AMBER 68** (vib 0.43).
-- **90 s**: crosses into **RED 49** (vib ~0.98).
-- **110 s**: bhi-drop beat (load 0.40, cv 0.55) → **RED 33.6**; holds RED through 175 s.
+- **Healthy phase**: BHI starts **87.1** (fusion initial state) then settles **77–79 GREEN** on real Z24 (vib 0.12–0.20) — "strong, healthy bridge" is honest. Measured f1 baseline locks ≈ **3.89 Hz**.
+- **45 s**: crack detected (CV) → BHI **77.7**, still GREEN.
+- **75 s**: rupture onset (seeded **pier-settlement → cracks** defect) → **AMBER 54**.
+- **90 s**: seeded **tendon rupture** → f1 slides 3.53; crosses into **RED 34** by ~105 s.
+- **150 s**: bhi-drop beat (load + CV escalation) → **RED 33.6**; holds RED through 175 s.
+- **Measured overlay agrees with the seeded narrative**: seeded tendon-rupture f1 = 3.244 Hz (EI −22.6% main span) → measured first-mode f1 = **3.23 Hz**, model-inferred damage ~61%, BHI holds RED 33.x. No forced tone — the frequency really moves.
 - Alerts fire at 45 s (crack warning), 75 s (vibration warning), 110 s (BHI RED critical), 140 s (tendon-rupture critical).
 
 So "BHI drops from 87" (0:00 baseline) is literally true on the live dashboard, and the 2:00–4:00 demo window shows the full GREEN→AMBER→RED arc. The 49 other bridges in the fleet map remain illustrative (real locations, simulated health) — spoken honestly per the honesty beats.
