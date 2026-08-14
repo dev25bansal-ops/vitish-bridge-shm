@@ -34,6 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
+from app import deterioration as det_mod  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
 from app import stiffness as stiffness_mod  # noqa: E402
 from app.config import settings  # noqa: E402
@@ -174,6 +175,53 @@ def create_app() -> FastAPI:
             return {"error": "stiffness tracker not running",
                     "note": "start the stack (python -m app.run_all)"}
         return tracker.snapshot()
+
+    @app.get("/api/bridge/{bridge_id}/deterioration")
+    def deterioration(bridge_id: str, years: int = Query(30, ge=1, le=100),
+                      rating: str = Query("super", pattern="^(super|sub)$")) -> dict:
+        """Markov condition projection under the empirical LTBP fleet prior
+        (D1-4/D2-11).  Probabilistic model, never a certified RUL."""
+        if bridge_id == settings.bridge_id:
+            hero = _live_hero_state()
+            bhi = float(hero.get("bhi") or _DEFAULT_HERO["bhi"])
+        else:
+            b = find_bridge(bridge_id)
+            if b is None:
+                raise HTTPException(status_code=404, detail="bridge not found")
+            bhi = float(b["bhi"])
+        try:
+            return det_mod.bridge_deterioration(bridge_id, bhi, years=years, rating=rating)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/bridge/{bridge_id}/condition")
+    def condition(bridge_id: str, run_seg: int = Query(0, ge=0, le=1)) -> dict:
+        """Regulator condition card from the crack index (D1-3).
+
+        Default: card from the live fused cv sub-index (fast, offline, always
+        labeled ``live-cv-subindex``).  ``?run_seg=1`` runs real segmentation on
+        a synthetic demo crack frame -> card from real detections
+        (``source=segmentation``, YOLO-seg when crack_seg.pt loads).
+        """
+        from models.fusion import condition as cond_mod
+        if bridge_id == settings.bridge_id:
+            hero = _live_hero_state()
+            cv = float(hero.get("cv") or _DEFAULT_HERO["cv"])
+        else:
+            b = find_bridge(bridge_id)
+            if b is None:
+                raise HTTPException(status_code=404, detail="bridge not found")
+            cv = 0.15  # illustrative regulator cv sub-index (see regulator_bridges)
+        if run_seg:
+            from models.cv.inference import CrackDetector, demo_frame
+            det = CrackDetector()
+            dets = det.detect(demo_frame(size=320, seed=7))
+            mode = "yolo-seg" if "yolo" in det.mode else "heuristic"
+            return cond_mod.condition_card(
+                dets, mode=mode,
+                frame_note="real segmentation on a synthetic demo crack frame "
+                           "(models/cv/inference.demo_frame)")
+        return cond_mod.card_from_live_cv(cv)
 
     @app.get("/api/bridge/{bridge_id}/history")
     def history(bridge_id: str, metric: str = "bhi",
