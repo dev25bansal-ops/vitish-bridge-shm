@@ -33,6 +33,7 @@ from app import simulator as sim_mod  # noqa: E402
 from app import ws_bridge as ws_mod  # noqa: E402
 from app import demo_driver as drv_mod  # noqa: E402
 from app import fusion as fusion_mod  # noqa: E402
+from app import stiffness as stiffness_mod  # noqa: E402
 from app import mqtt_client  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
 
@@ -104,6 +105,10 @@ def main(argv=None) -> int:
 
     fusion = fusion_mod.FusionService(cfg, bus, store, publisher)
     fusion.start()
+
+    stiffness_tracker = stiffness_mod.StiffnessTracker(cfg, bus)
+    stiffness_mod.set_tracker(stiffness_tracker)
+    stiffness_tracker.start()
 
     recorder_token = db.attach_recorder(cfg, bus, store)
 
@@ -216,6 +221,7 @@ def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
         driver.stop()
     ws.stop()
     fusion.stop()
+    stiffness_mod.get_tracker() and stiffness_mod.get_tracker().stop()
     bus.unsubscribe(recorder_token)
     if live_recorder_token is not None:
         bus.unsubscribe(live_recorder_token)

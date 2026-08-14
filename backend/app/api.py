@@ -7,6 +7,7 @@ REST surface for the digital twin and the demo controller:
     GET  /api/bridges                    hero + 49 regulator bridges
     GET  /api/bridges/geojson            MapLibre FeatureCollection (50 points)
     GET  /api/bridge/{id}/state          current BHI + sub-indices + state
+    GET  /api/bridge/{id}/stiffness      f1, EI drift, damage %, FEM mode shapes
     GET  /api/bridge/{id}/history?metric=bhi|rms&limit=N
     POST /api/demo/scenario              {"scenario": "healthy"|"rupture"}
 
@@ -34,6 +35,7 @@ from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
+from app import stiffness as stiffness_mod  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import get_store, reset_store  # noqa: E402
 from app.events import get_bus  # noqa: E402
@@ -160,6 +162,18 @@ def create_app() -> FastAPI:
                 "bhi": b["bhi"], "state": b["state"],
                 "cv": 0.15, "vib": 0.15, "load": 0.20, "u": 3.0,
                 "hero": False, "live": False}
+
+    @app.get("/api/bridge/{bridge_id}/stiffness")
+    def stiffness(bridge_id: str) -> dict:
+        """Z24 box-girder physics overlay: measured f1, EI drift, model-inferred
+        damage %, FEM mode shapes.  Explainability only — never fuses into BHI."""
+        if bridge_id != settings.bridge_id:
+            raise HTTPException(status_code=404, detail="no stiffness model for this bridge")
+        tracker = stiffness_mod.get_tracker()
+        if tracker is None:
+            return {"error": "stiffness tracker not running",
+                    "note": "start the stack (python -m app.run_all)"}
+        return tracker.snapshot()
 
     @app.get("/api/bridge/{bridge_id}/history")
     def history(bridge_id: str, metric: str = "bhi",
