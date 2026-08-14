@@ -41,6 +41,19 @@ export interface LiveState {
   flag: number
 }
 
+/** Z24 box-girder physics overlay (see backend/app/stiffness.py). */
+export interface StiffnessState {
+  f1Meas: number // measured first vertical mode (Hz)
+  f1Ref: number // healthy baseline f1 (Hz)
+  eiDriftPct: number // stiffness drift vs baseline (%)
+  damagePct: number // model-inferred mid-span stiffness loss (%)
+  freqs: number[] // FEM mode frequencies (Hz)
+  x: number[] // FEM deck sample coordinates (m, 0..58)
+  shapes: number[][] // FEM mode shapes, one array of deck deflections per mode
+  baselineLocked: boolean
+  stale: boolean
+}
+
 export interface Alert {
   id: number
   ts: number
@@ -56,6 +69,7 @@ export interface TwinState {
   selectedBridgeId: string
   selectedSensorId: number | null
   live: LiveState
+  stiffness: StiffnessState
   spectrum: number[]
   bhiTrend: number[]
   alerts: Alert[]
@@ -65,6 +79,7 @@ export interface TwinState {
   setSelectedBridgeId: (id: string) => void
   setSelectedSensorId: (id: number | null) => void
   setLive: (patch: Partial<LiveState>) => void
+  setStiffness: (s: Partial<StiffnessState>) => void
   setSpectrum: (s: number[]) => void
   pushAlert: (a: Omit<Alert, 'id' | 'ts'>) => void
   setWsStatus: (s: WsStatus) => void
@@ -78,6 +93,7 @@ export const BHI_GREEN = 70.0
 export const BHI_AMBER = 50.0
 export const BHI_W = { cv: 0.4, vib: 0.35, load: 0.25 }
 export const WINDOW_N = 1024
+export const BRIDGE_DECK_Y = 6 // Z24 box-girder deck soffit height (m)
 
 export function stateFor(bhi: number): HealthState {
   if (bhi >= BHI_GREEN) return 'GREEN'
@@ -98,16 +114,30 @@ const TREND_MAX = 120
 const ALERTS_MAX = 40
 let alertSeq = 0
 
+const STIFFNESS_EMPTY: StiffnessState = {
+  f1Meas: 3.8,
+  f1Ref: 3.8,
+  eiDriftPct: 0,
+  damagePct: 0,
+  freqs: [3.8],
+  x: [],
+  shapes: [],
+  baselineLocked: false,
+  stale: true,
+}
+
 export const useStore = create<TwinState>((set, get) => ({
   bridges: [],
   sensors: [
-    { id: 0, node: 6, x: -46, y: 15.6, z: 4.6 },
-    { id: 1, node: 7, x: 0, y: 15.6, z: 4.6 },
-    { id: 2, node: 8, x: 46, y: 15.6, z: 4.6 },
+    // Z24 accelerometer nodes on the box-girder deck (main span, x = -10/0/+10).
+    { id: 0, node: 6, x: -10, y: BRIDGE_DECK_Y, z: 2.3 },
+    { id: 1, node: 7, x: 0, y: BRIDGE_DECK_Y, z: 2.3 },
+    { id: 2, node: 8, x: 10, y: BRIDGE_DECK_Y, z: 2.3 },
   ],
   selectedBridgeId: 'z24',
   selectedSensorId: null,
-  live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: 5.2, flag: 0 },
+  live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: 3.8, flag: 0 },
+  stiffness: STIFFNESS_EMPTY,
   spectrum: [],
   bhiTrend: [],
   alerts: [],
@@ -130,6 +160,8 @@ export const useStore = create<TwinState>((set, get) => ({
       set({ live })
     }
   },
+
+  setStiffness: (patch) => set({ stiffness: { ...get().stiffness, ...patch } }),
 
   setSpectrum: (spectrum) => set({ spectrum }),
 

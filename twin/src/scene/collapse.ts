@@ -1,13 +1,24 @@
-// Mutable collapse state + pure bridge geometry functions shared by the
-// parametric bridge, the sensor markers and the popup. Everything is derived
-// from a single animation clock advanced once per frame in MorbiBridge.
+// Mutable damage state + box-girder geometry for the Z24 twin.
+//
+// Identity (D1-2): the hero bridge is the Z24 benchmark — a 14 + 30 + 14 m
+// post-tensioned concrete box girder continuous over four supports.  The deck
+// is 58 m total (x ∈ [-29, +29]), interior piers at x = ±14, first vertical
+// mode f1 ≈ 3.8 Hz (healthy).  The mesh therefore renders a box girder — no
+// towers, no cables.  The story's "collapse" is a mid-span stiffness loss:
+// static deflection (sag) + exaggerated first-mode flexing (cascade).
+//
+// The mode shapes / frequencies are served by the backend physics overlay
+// (GET /api/bridge/z24/stiffness → Euler-Bernoulli FEM) and read from the
+// store.  Until the first snapshot arrives we fall back to the analytic
+// reference simple-span mode φ1 = sin(π·x/30) over the main span.
 import type { Scenario } from '../store'
+import { useStore } from '../store'
 
 export interface CollapseState {
-  cableBroken: boolean
-  cableDrop: number // 0..1 snap of the broken cable (fast)
-  sag: number // 0..1 deck droop (slow)
-  cascade: number // 0..1 sensor cascade vibration (slowest)
+  cableBroken: boolean // legacy flag — no cables on a box girder; always false
+  cableDrop: number // unused (kept for call-site compatibility)
+  sag: number // 0..1 mid-span static deflection (damage)
+  cascade: number // 0..1 first-mode flexing amplitude (exaggerated)
 }
 
 export const collapseState: CollapseState = {
@@ -18,33 +29,28 @@ export const collapseState: CollapseState = {
 }
 
 export const BRIDGE = {
-  L: 230,
-  half: 115,
-  towerX: 100,
-  towerTop: 40,
-  deckY: 14,
-  midSag: 22,
-  anchorX: 112,
-  zCable: 4.5,
-  zDeck: 4.6,
+  L: 58, // total superstructure length (14 + 30 + 14)
+  half: 29,
+  deckY: 6, // deck soffit height above the river
+  pierX: 14, // interior piers at x = ±14
+  mainHalf: 15, // main (middle) span: x ∈ [-15, +15] = 30 m
+  deckW: 5.4, // box-girder deck width (m)
+  deckH: 1.6, // box-girder depth (m)
+  zDeck: 2.3, // half-depth offset for deck-surface markers
 }
 
-const T_ANIM_MAX = 15 // 15 s story arc
+const T_ANIM_MAX = 15 // 15 s story arc (kept from the cable-stay bridge)
 let animT = 0
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 const smooth = (x: number) => x * x * (3 - 2 * x)
 
-function gauss(x: number, cx: number, sigma: number): number {
-  return Math.exp(-((x - cx) ** 2) / (2 * sigma * sigma))
-}
-
 function sync(): void {
   const t = Math.max(0, Math.min(T_ANIM_MAX, animT))
-  collapseState.cableBroken = t > 2.5
-  collapseState.cableDrop = smooth(clamp01((t - 2.5) / 1.8))
-  collapseState.sag = smooth(clamp01((t - 3.5) / 6.5))
-  collapseState.cascade = smooth(clamp01((t - 7) / 8))
+  // Deflection precedes flexing: the crack/onset droops first, then the
+  // first-mode vibration builds up and stays (no flicker, no recovery).
+  collapseState.sag = smooth(clamp01((t - 1.5) / 7.5))
+  collapseState.cascade = smooth(clamp01((t - 4.5) / 10))
 }
 
 export function resetCollapse(): void {
@@ -62,30 +68,48 @@ export function tickCollapse(scenario: Scenario, delta: number): void {
   sync()
 }
 
-// --- geometry (pure; driven by the mutable collapseState) ------------------
+// --- geometry (pure; driven by the mutable collapseState + store) ------------
 
-/** Deck surface height at span coordinate x (m). */
-export function deckYAt(x: number): number {
-  const pDeck = Math.max(0, 1 - (x / BRIDGE.towerX) ** 2)
-  const g = gauss(x, -18, 60)
-  return BRIDGE.deckY - collapseState.sag * 6 * pDeck - collapseState.sag * 5 * g
-}
-
-/** Main-cable height at span coordinate x (m). */
-export function cableYAt(x: number): number {
-  const abs = Math.abs(x)
-  if (abs >= BRIDGE.towerX) {
-    const t = clamp01((abs - BRIDGE.towerX) / (BRIDGE.anchorX - BRIDGE.towerX))
-    return BRIDGE.towerTop + (BRIDGE.deckY - BRIDGE.towerTop) * t
+/** Interpolate the FEM first-mode shape (backend snapshot) at scene x. */
+export function modePhi1(x: number): number {
+  const st = useStore.getState()
+  const s1 = st.stiffness.shapes[0]
+  const fem = st.stiffness.x
+  if (s1 && fem.length === s1.length) {
+    // scene x ∈ [-29, +29] ↔ FEM x ∈ [0, 58]
+    const xf = clamp01((x + BRIDGE.half) / BRIDGE.L) * (fem.length - 1)
+    const i = Math.floor(xf)
+    const j = Math.min(fem.length - 1, i + 1)
+    const f = xf - i
+    return (s1[i] ?? 0) * (1 - f) + (s1[j] ?? 0) * f
   }
-  const p = 1 - (x / BRIDGE.towerX) ** 2
-  const g = gauss(x, -18, 60)
-  return BRIDGE.towerTop - BRIDGE.midSag * p - 34 * g * p * collapseState.cableDrop
+  // Fallback: reference simple-span first mode over the 30 m main span.
+  const xm = x / BRIDGE.mainHalf // -1..1 across the main span
+  return Math.sin(Math.PI * (xm + 1) / 2)
 }
 
-/** Small travelling-wave vibration applied during the cascade phase. */
+/** Measured first vertical-mode frequency (Hz) from the physics overlay. */
+export function modeFreq1(): number {
+  const f = useStore.getState().stiffness.freqs[0]
+  return f > 0 ? f : 3.8
+}
+
+/**
+ * Exaggerated first-mode flexing at scene x, time t.  `cascade` gates the
+ * amplitude so a healthy deck is still; during damage the deck visibly bends
+ * in its first mode at the *measured* f1.  Amplitude is exaggerated and the
+ * overlay is labeled "mode shape · exaggerated" in the panel copy.
+ */
 export function wobble(x: number, t: number): number {
   if (collapseState.cascade <= 0) return 0
-  const a = Math.sin(x * 0.35 + t * 2.2) * 0.6 + Math.sin(x * 0.13 - t * 1.6) * 0.8
-  return a * collapseState.cascade
+  const amp = 0.7 * collapseState.cascade * modePhi1(x)
+  return amp * Math.sin(2 * Math.PI * modeFreq1() * t)
+}
+
+/** Deck soffit height at scene x (static base + mid-span damage droop). */
+export function deckYAt(x: number): number {
+  // Static droop from the mid-span stiffness loss — a bell centred on the
+  // main-span mid-point (x = 0), ~0 at the interior piers (x = ±14).
+  const droop = 1.7 * Math.exp(-((x / 11) ** 2))
+  return BRIDGE.deckY - collapseState.sag * droop
 }

@@ -168,22 +168,40 @@ def snapshot(f1_meas: Optional[float], f1_base: Optional[float] = None) -> dict:
 
     `f1_base` (default F1_REF) is the healthy baseline the drift is measured
     against — a live tracker passes its own measured self-baseline.
+
+    Honesty notes:
+      * The damage inversion is **self-calibrating**: the measured f1 is mapped
+        onto the FEM reference scale via the baseline (`f1 * F1_REF / base`), so
+        a bridge whose real healthy fundamental sits at 3.9 Hz (the Z24) still
+        reads 0% damage when healthy, and the calibration curve (−10% EI →
+        ≈ −2.2% f1) applies to *relative* drift from that baseline.
+      * `ei_drift_pct` is clamped to ≥ 0: a measured f1 *at or above* baseline is
+        a forced response (e.g. the demo's 4 Hz rupture tonal), never a stiffness
+        *gain*, so the overlay refuses to claim "stiffening".
     """
     f1 = f1_meas if f1_meas and f1_meas > 0 else F1_REF
     base = f1_base if f1_base and f1_base > 0 else F1_REF
-    damage = damage_from_f1(f1)
+    damage = damage_from_f1(f1 * F1_REF / base)
+    # Deadband: real f1 tracks under traffic wander ~±2% even when healthy —
+    # a drift that small is response noise, not stiffness loss.  Only infer
+    # damage once the smoothed f1 sits clearly below the baseline.
+    if f1 >= base * 0.98:
+        damage = 0.0
     freqs, shapes = fem_modes(damage_profile(damage), n_modes=2)
+    f1_drift_pct = 100.0 * (f1 / base - 1.0)
+    ei_drift_pct = max(0.0, 100.0 * (1.0 - (f1 / base) ** 2))
     return {
         "model": "z24 continuous 3-span box girder (14+30+14 m)",
         "reference": "simple-span proxy EI = 4·f1²·L⁴·ρA/π², L=30 m",
         "f1_meas": round(f1, 3),
         "f1_ref": round(base, 3),
-        "f1_drift_pct": round(100.0 * (f1 / base - 1.0), 2),
+        "f1_drift_pct": round(f1_drift_pct, 2),
         "ei_ref": round(ei_ref_from_f1(f1), 4),
         "ei_ref_base": round(ei_ref_from_f1(base), 4),
-        "ei_drift_pct": round(ei_drift_pct(f1, base), 2),
+        "ei_drift_pct": round(ei_drift_pct, 2),
         "damage_pct": round(100.0 * damage, 1),   # model-inferred mid-span loss
-        "deflection_um": round(midspan_deflection_um(350e3, ei_ref_from_f1(f1)), 1),
+        "deflection_um": round(midspan_deflection_um(
+            350e3, EI_REF * (1.0 - damage)), 1),
         "freqs": [round(float(fr), 3) for fr in freqs],
         "x": [round(float(xx), 1) for xx in _X.tolist()],
         "shapes": [[round(float(v), 4) for v in shapes[:, m].tolist()]

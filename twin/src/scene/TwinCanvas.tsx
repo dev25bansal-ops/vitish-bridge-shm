@@ -18,13 +18,13 @@ function CameraRig() {
 
   useFrame(() => {
     if (!controls) return
-    const home = new THREE.Vector3(0, 18, 0)
+    const home = new THREE.Vector3(0, 5, 0)
     let target = home
     if (sensorId != null && sensors[sensorId]) {
       const sn = sensors[sensorId]
       target = new THREE.Vector3(
         sn.x,
-        deckYAt(sn.x) + (sn.y - BRIDGE.deckY) + 4,
+        deckYAt(sn.x) + (sn.y - BRIDGE.deckY) + 3,
         sn.z,
       )
     }
@@ -42,10 +42,10 @@ export function TwinCanvas() {
       dpr={[1, 1.5]}
       shadows={false}
       frameloop="always"
-      camera={{ position: [118, 52, 172], fov: 42, near: 0.5, far: 4000 }}
+      camera={{ position: [36, 20, 46], fov: 42, near: 0.5, far: 1200 }}
     >
       <color attach="background" args={['#dce9f2']} />
-      <fog attach="fog" args={['#dce9f2', 420, 1400]} />
+      <fog attach="fog" args={['#dce9f2', 160, 520]} />
 
       <ambientLight intensity={0.75} color="#ffffff" />
       <directionalLight position={[90, 140, 70]} intensity={1.35} color="#fff6e8" />
@@ -60,9 +60,9 @@ export function TwinCanvas() {
         makeDefault
         enableDamping
         dampingFactor={0.08}
-        target={[0, 18, 0]}
-        maxDistance={900}
-        minDistance={24}
+        target={[0, 5, 0]}
+        maxDistance={220}
+        minDistance={8}
         maxPolarAngle={Math.PI / 2 - 0.02}
       />
     </Canvas>

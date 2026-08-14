@@ -1,85 +1,53 @@
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Scenario } from '../store'
 import { useStore } from '../store'
-import {
-  BRIDGE,
-  cableYAt,
-  collapseState,
-  deckYAt,
-  resetCollapse,
-  tickCollapse,
-  wobble,
-} from './collapse'
+import { BRIDGE, deckYAt, resetCollapse, tickCollapse, wobble } from './collapse'
 
-const DECK_SEGS = 23
-const SEG_W = BRIDGE.L / DECK_SEGS // 10 m
-const HANGER_SPAN = 19 // 19 hanger stations, one per 10 m along the main span
-const HANGER_COUNT = HANGER_SPAN * 2 // both sides
-const CABLE_SEGS = 64
-
+// 2 m deck segments over the 58 m superstructure (14 + 30 + 14).
+const SEGS = 29
+const SEG_W = BRIDGE.L / SEGS
 const deckX = (i: number) => -BRIDGE.half + SEG_W / 2 + i * SEG_W
+const WEB_X = BRIDGE.deckW / 2 - 0.17
 
-// Pre-allocated scratch (no per-frame allocation in the hot loop).
-const cablePtsA = Array.from({ length: CABLE_SEGS + 1 }, () => new THREE.Vector3())
-const cablePtsB = Array.from({ length: CABLE_SEGS + 1 }, () => new THREE.Vector3())
-const IDENT_Q = new THREE.Quaternion()
-const tmpM = new THREE.Matrix4()
-const tmpP = new THREE.Vector3()
-const tmpS = new THREE.Vector3()
-
-function buildCableGeometry(zSide: number, t: number, pts: THREE.Vector3[]): THREE.TubeGeometry {
-  for (let i = 0; i <= CABLE_SEGS; i++) {
-    const x = -BRIDGE.anchorX + (2 * BRIDGE.anchorX * i) / CABLE_SEGS
-    pts[i].set(x, cableYAt(x) + wobble(x, t), zSide)
-  }
-  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.5)
-  return new THREE.TubeGeometry(curve, CABLE_SEGS * 2, 0.34, 8, false)
+// Damage tint: main-span segments warm toward amber/red as the measured
+// stiffness loss grows; side spans stay near-neutral concrete grey.
+function segColor(x: number, damagePct: number): string {
+  if (Math.abs(x) > BRIDGE.mainHalf) return '#9aa2ab'
+  const d = Math.max(0, Math.min(1, damagePct / 35))
+  const t = d * (0.35 + 0.65 * Math.exp(-((x / 7) ** 2)))
+  const r = Math.round(0x9a + (0xc2 - 0x9a) * t)
+  const g = Math.round(0xa2 - 0x38 * t)
+  const b = Math.round(0xab - 0x52 * t)
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`
 }
 
 export interface MorbiBridgeProps {
   scenario: Scenario
   collapseEpoch: number
-  /** Optional static override of the collapse state (storyboard-driven). */
-  collapse?: {
-    cableBroken: boolean
-    sag: number
-    cascade: number
-  }
 }
 
 /**
- * Parametric suspension bridge — no downloaded GLB.
- * Deck 230 x 1.25 (BoxGeometry segments), 2 towers, catenary main cables
- * (TubeGeometry along a CatmullRomCurve3), instanced hangers, piers, river.
- * Total is well under 10k tris.
+ * Parametric Z24 box girder — no downloaded GLB, no cables.
+ * 58 m post-tensioned concrete box girder (14 + 30 + 14 m), two interior piers
+ * at x = ±14, abutments at ±29, river plane.  Damage arc: mid-span deflection
+ * (sag) + exaggerated first-mode flexing (wobble) at the *measured* f1 from
+ * the backend physics overlay; main-span segments heat-map toward red with the
+ * measured stiffness loss.  Total well under 10k tris.
  */
 export const MorbiBridge = memo(function MorbiBridge({
   scenario,
   collapseEpoch,
-  collapse,
 }: MorbiBridgeProps) {
-  const deckRefs = useRef<Array<THREE.Mesh | null>>([])
-  const cableARef = useRef<THREE.Mesh>(null)
-  const cableBRef = useRef<THREE.Mesh>(null)
-  const hangerRef = useRef<THREE.InstancedMesh>(null)
-  const towerARef = useRef<THREE.Mesh>(null)
-  const towerBRef = useRef<THREE.Mesh>(null)
-  const cableGeoA = useRef<THREE.BufferGeometry | null>(null)
-  const cableGeoB = useRef<THREE.BufferGeometry | null>(null)
+  const topRefs = useRef<Array<THREE.Mesh | null>>([])
+  const botRefs = useRef<Array<THREE.Mesh | null>>([])
+  const webRefs = useRef<Array<THREE.Mesh | null>>([])
+  const matRefs = useRef<Array<THREE.MeshStandardMaterial | null>>([])
+  const pierARef = useRef<THREE.Mesh>(null)
+  const pierBRef = useRef<THREE.Mesh>(null)
 
-  const hangerXs = useMemo(() => Array.from({ length: HANGER_SPAN }, (_, i) => -90 + i * 10), [])
-
-  // Initial cable shapes so the meshes render before the first frame.
-  const [geoA, geoB] = useMemo(() => {
-    const a = buildCableGeometry(-BRIDGE.zCable, 0, cablePtsA)
-    const b = buildCableGeometry(BRIDGE.zCable, 0, cablePtsB)
-    cableGeoA.current = a
-    cableGeoB.current = b
-    return [a, b]
-  }, [])
-
+  // Re-mount the arc clock on collapse replay.
   useEffect(() => {
     resetCollapse()
   }, [collapseEpoch])
@@ -87,122 +55,92 @@ export const MorbiBridge = memo(function MorbiBridge({
   useFrame((state, delta) => {
     tickCollapse(scenario, delta)
     const t = state.clock.elapsedTime
-    // `collapse` is an optional static override for storyboards; when absent the
-    // internal clock (driven by scenario) is authoritative via collapseState.
-    const cascade = collapse ? collapse.cascade : collapseState.cascade
+    const damagePct = useStore.getState().stiffness.damagePct
+    const crack = scenario === 'rupture' ? 1 : 0
 
-    // deck segments — vertical droop + subtle torsion during cascade
-    for (let i = 0; i < DECK_SEGS; i++) {
-      const m = deckRefs.current[i]
-      if (!m) continue
+    for (let i = 0; i < SEGS; i++) {
       const x = deckX(i)
-      m.position.y = deckYAt(x) + wobble(x, t)
-      m.rotation.z = Math.sin(t * 2.1) * 0.018 * cascade * (x / BRIDGE.half)
-    }
-
-    // main cables — rebuild the TubeGeometry from the live curve (small; ~2k tris)
-    if (cableARef.current) {
-      cableGeoA.current?.dispose()
-      cableGeoA.current = buildCableGeometry(-BRIDGE.zCable, t, cablePtsA)
-      cableARef.current.geometry = cableGeoA.current
-    }
-    if (cableBRef.current) {
-      cableGeoB.current?.dispose()
-      cableGeoB.current = buildCableGeometry(BRIDGE.zCable, t, cablePtsB)
-      cableBRef.current.geometry = cableGeoB.current
-    }
-
-    // tower sway
-    const sway = Math.sin(t * 1.7) * 0.03 * cascade
-    if (towerARef.current) towerARef.current.rotation.z = sway
-    if (towerBRef.current) towerBRef.current.rotation.z = sway
-
-    // hangers — instanced vertical struts from cable to deck
-    const hm = hangerRef.current
-    if (hm) {
-      let idx = 0
-      for (const x of hangerXs) {
-        const top = cableYAt(x) + wobble(x, t)
-        const bot = deckYAt(x) + wobble(x, t)
-        const len = Math.max(0.05, top - bot)
-        const mid = (top + bot) / 2
-        tmpP.set(0, 0, 0)
-        tmpS.set(1, len, 1)
-        for (const side of [-1, 1]) {
-          tmpP.set(x, mid, side * BRIDGE.zDeck)
-          tmpM.compose(tmpP, IDENT_Q, tmpS)
-          hm.setMatrixAt(idx++, tmpM)
-        }
+      const y = deckYAt(x) + wobble(x, t)
+      const top = topRefs.current[i]
+      const bot = botRefs.current[i]
+      const webA = webRefs.current[i * 2]
+      const webB = webRefs.current[i * 2 + 1]
+      if (top) top.position.set(x, y + BRIDGE.deckH / 2, 0)
+      if (bot) bot.position.set(x, y - BRIDGE.deckH / 2, 0)
+      if (webA) {
+        webA.position.set(x, y, WEB_X)
+        webA.rotation.z = 0.012 * Math.sin(t * 2.0) * crack
       }
-      hm.instanceMatrix.needsUpdate = true
+      if (webB) {
+        webB.position.set(x, y, -WEB_X)
+        webB.rotation.z = -0.012 * Math.sin(t * 2.0) * crack
+      }
+      // per-frame damage heat tint (reads the overlay, no re-render)
+      const mat = matRefs.current[i]
+      if (mat) mat.color.set(segColor(x, damagePct))
     }
+
+    // pier sway follows the deck so the bearing interface never detaches
+    const sway = 0.02 * Math.sin(t * 2.0) * crack
+    if (pierARef.current) pierARef.current.rotation.z = sway
+    if (pierBRef.current) pierBRef.current.rotation.z = -sway
   })
 
   return (
     <group>
-      {/* deck */}
-      {Array.from({ length: DECK_SEGS }, (_, i) => (
-        <mesh key={i} ref={(el) => { deckRefs.current[i] = el }} position={[deckX(i), BRIDGE.deckY, 0]}>
-          <boxGeometry args={[SEG_W, 1.25, 9]} />
-          <meshStandardMaterial color="#3d454e" roughness={0.85} metalness={0.1} />
-        </mesh>
-      ))}
+      {Array.from({ length: SEGS }, (_, i) => {
+        const x = deckX(i)
+        const base = BRIDGE.deckY
+        return (
+          <group key={i}>
+            <mesh ref={(el) => { topRefs.current[i] = el }} position={[x, base + BRIDGE.deckH / 2, 0]}>
+              <boxGeometry args={[SEG_W, 0.28, BRIDGE.deckW]} />
+              <meshStandardMaterial
+                ref={(el) => { matRefs.current[i] = el }}
+                color={segColor(x, 0)}
+                roughness={0.85}
+                metalness={0.05}
+              />
+            </mesh>
+            <mesh ref={(el) => { botRefs.current[i] = el }} position={[x, base - BRIDGE.deckH / 2, 0]}>
+              <boxGeometry args={[SEG_W, 0.24, BRIDGE.deckW]} />
+              <meshStandardMaterial color="#8d959d" roughness={0.9} metalness={0.05} />
+            </mesh>
+            <mesh ref={(el) => { webRefs.current[i * 2] = el }} position={[x, base, WEB_X]}>
+              <boxGeometry args={[SEG_W, BRIDGE.deckH - 0.52, 0.34]} />
+              <meshStandardMaterial color="#8d959d" roughness={0.9} metalness={0.05} />
+            </mesh>
+            <mesh ref={(el) => { webRefs.current[i * 2 + 1] = el }} position={[x, base, -WEB_X]}>
+              <boxGeometry args={[SEG_W, BRIDGE.deckH - 0.52, 0.34]} />
+              <meshStandardMaterial color="#8d959d" roughness={0.9} metalness={0.05} />
+            </mesh>
+          </group>
+        )
+      })}
 
-      {/* towers */}
-      <mesh ref={towerARef} position={[-BRIDGE.towerX, 22, 0]}>
-        <boxGeometry args={[7, 44, 7]} />
-        <meshStandardMaterial color="#2f363e" roughness={0.7} metalness={0.3} />
+      {/* interior piers at x = ±14 */}
+      <mesh ref={pierARef} position={[-BRIDGE.pierX, (BRIDGE.deckY - 2.4) / 2, 0]}>
+        <boxGeometry args={[1.1, BRIDGE.deckY - 2.4, 4.4]} />
+        <meshStandardMaterial color="#7c858d" roughness={0.8} metalness={0.1} />
       </mesh>
-      <mesh ref={towerBRef} position={[BRIDGE.towerX, 22, 0]}>
-        <boxGeometry args={[7, 44, 7]} />
-        <meshStandardMaterial color="#2f363e" roughness={0.7} metalness={0.3} />
-      </mesh>
-      <mesh position={[-BRIDGE.towerX, 45.5, 0]}>
-        <boxGeometry args={[9, 3, 9]} />
-        <meshStandardMaterial color="#39424c" roughness={0.8} />
-      </mesh>
-      <mesh position={[BRIDGE.towerX, 45.5, 0]}>
-        <boxGeometry args={[9, 3, 9]} />
-        <meshStandardMaterial color="#39424c" roughness={0.8} />
-      </mesh>
-
-      {/* main cables */}
-      <mesh ref={cableARef} geometry={geoA}>
-        <meshStandardMaterial color="#4a5158" roughness={0.5} metalness={0.6} />
-      </mesh>
-      <mesh ref={cableBRef} geometry={geoB}>
-        <meshStandardMaterial color="#4a5158" roughness={0.5} metalness={0.6} />
-      </mesh>
-
-      {/* hangers */}
-      <instancedMesh ref={hangerRef} args={[undefined, undefined, HANGER_COUNT]}>
-        <cylinderGeometry args={[0.09, 0.09, 1, 6, 1, true]} />
-        <meshStandardMaterial color="#8b96a1" roughness={0.6} metalness={0.4} />
-      </instancedMesh>
-
-      {/* piers under towers */}
-      <mesh position={[-BRIDGE.towerX, 7, 0]}>
-        <cylinderGeometry args={[3, 3.4, 14, 10]} />
-        <meshStandardMaterial color="#37404a" roughness={0.8} />
-      </mesh>
-      <mesh position={[BRIDGE.towerX, 7, 0]}>
-        <cylinderGeometry args={[3, 3.4, 14, 10]} />
-        <meshStandardMaterial color="#37404a" roughness={0.8} />
+      <mesh ref={pierBRef} position={[BRIDGE.pierX, (BRIDGE.deckY - 2.4) / 2, 0]}>
+        <boxGeometry args={[1.1, BRIDGE.deckY - 2.4, 4.4]} />
+        <meshStandardMaterial color="#7c858d" roughness={0.8} metalness={0.1} />
       </mesh>
 
-      {/* abutments */}
-      <mesh position={[-BRIDGE.half - 3, 7, 0]}>
-        <boxGeometry args={[8, 14, 10]} />
-        <meshStandardMaterial color="#2b323a" roughness={0.85} />
+      {/* abutments at ±29 */}
+      <mesh position={[-BRIDGE.half - 2.5, (BRIDGE.deckY - 2.4) / 2, 0]}>
+        <boxGeometry args={[5, BRIDGE.deckY - 2.4, 8]} />
+        <meshStandardMaterial color="#5d666e" roughness={0.9} metalness={0.05} />
       </mesh>
-      <mesh position={[BRIDGE.half + 3, 7, 0]}>
-        <boxGeometry args={[8, 14, 10]} />
-        <meshStandardMaterial color="#2b323a" roughness={0.85} />
+      <mesh position={[BRIDGE.half + 2.5, (BRIDGE.deckY - 2.4) / 2, 0]}>
+        <boxGeometry args={[5, BRIDGE.deckY - 2.4, 8]} />
+        <meshStandardMaterial color="#5d666e" roughness={0.9} metalness={0.05} />
       </mesh>
 
       {/* river */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.6, -60]}>
-        <planeGeometry args={[1000, 720]} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.4, -30]}>
+        <planeGeometry args={[300, 240]} />
         <meshStandardMaterial color="#3b7ea0" roughness={0.95} />
       </mesh>
     </group>

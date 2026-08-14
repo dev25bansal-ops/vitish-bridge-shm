@@ -3,7 +3,7 @@
 // (bridge/z24/accel, /bhi, /alert), so the whole demo runs with NO network.
 import { useStore, computeBhi, stateFor } from '../store'
 import type { AlertSource, Bridge, HealthState, Severity } from '../store'
-import { spectrumMagnitudes, dominantHz } from './fft'
+import { spectrumMagnitudes } from './fft'
 
 export const FLEET_COUNT = 50
 
@@ -103,7 +103,7 @@ export function generateFleet(): Bridge[] {
   })
   const hero: Bridge = {
     id: 'z24',
-    name: 'Z24 · Hero Suspension Span',
+    name: 'Z24 · Box Girder (Swiss reference)',
     lat: 41.59,
     lng: -90.5,
     bhi: 82,
@@ -144,6 +144,10 @@ export function startReplay(): () => void {
     const ph1 = rand() * Math.PI * 2
     const ph2 = rand() * Math.PI * 2
     const ph3 = rand() * Math.PI * 2
+    // Z24 box-girder modes: healthy f1 = 3.8 Hz (f2 = 15.2); rupture drops f1
+    // toward ~3.5 Hz (mid-span stiffness loss) and adds broadband impact energy.
+    const f1 = rupture ? 3.5 : 3.8
+    const f2 = 4 * f1
     const amps = rupture
       ? { a1: 0.1, a2: 0.14, a3: 0.3, noise: 0.06, impact: 0.35 }
       : { a1: 0.035, a2: 0.06, a3: 0.012, noise: 0.018, impact: 0 }
@@ -151,9 +155,9 @@ export function startReplay(): () => void {
     let sumSq = 0
     for (let i = 0; i < N; i++) {
       let v =
-        amps.a1 * Math.sin((2 * Math.PI * 4.6 * i) / fs + ph1) +
-        amps.a2 * Math.sin((2 * Math.PI * 9.4 * i) / fs + ph2) +
-        amps.a3 * Math.sin((2 * Math.PI * 1.1 * i) / fs + ph3) +
+        amps.a1 * Math.sin((2 * Math.PI * f1 * i) / fs + ph1) +
+        amps.a2 * Math.sin((2 * Math.PI * f2 * i) / fs + ph2) +
+        amps.a3 * Math.sin((2 * Math.PI * 0.6 * i) / fs + ph3) +
         (rand() - 0.5) * 2 * amps.noise
       if (rupture && i % 25 === 0) v += (rand() - 0.5) * 2 * amps.impact
       samples[i] = v
@@ -163,7 +167,7 @@ export function startReplay(): () => void {
     const flag = rupture && rand() < 0.45 ? 1 : 0
     const spec = spectrumMagnitudes(samples, 512, 256)
     useStore.getState().setSpectrum(spec)
-    useStore.getState().setLive({ rms: Math.round(rms * 1000) / 1000, freq: dominantHz(spec, fs), flag })
+    useStore.getState().setLive({ rms: Math.round(rms * 1000) / 1000, freq: f1, flag })
   }
 
   const emitBhi = () => {
@@ -186,13 +190,26 @@ export function startReplay(): () => void {
     const u = Math.round((1.5 + 6 * e + rand() * 0.5) * 100) / 100
     useStore.getState().setLive({ bhi, u, cv, vib, load, state: stateFor(bhi) })
 
+    // Keep the box-girder physics overlay honest offline: f1 drops with the
+    // damage clock, EI drift + inferred damage follow (mirrors the live overlay).
+    const f1 = rupture ? 3.8 - 0.28 * e : 3.8
+    useStore.getState().setStiffness({
+      f1Meas: Math.round(f1 * 100) / 100,
+      f1Ref: 3.8,
+      eiDriftPct: Math.round((1 - (f1 / 3.8) ** 2) * 1000) / 10,
+      damagePct: Math.round(31 * e * 10) / 10,
+      freqs: [Math.round(f1 * 100) / 100, 10.2],
+      baselineLocked: true,
+      stale: false,
+    })
+
     // Scripted alert sequence during the rupture story arc.
     if (rupture && damageClock === 1) {
       pushAlert(
         'critical',
         'fusion',
-        'Tendon-rupture signature detected (multi-modal evidence)',
-        'Impose load restriction to 20 t and dispatch strain-gauge verification to node 6.',
+        'Stiffness-loss signature detected (multi-modal evidence)',
+        'Impose load restriction to 20 t and dispatch strain-gauge verification to node 7.',
       )
     } else if (rupture && damageClock === 8) {
       pushAlert(
@@ -205,7 +222,7 @@ export function startReplay(): () => void {
       pushAlert(
         'critical',
         'cv',
-        'Cable-stay droop observed — confirm with optical camera',
+        'Mid-span deflection growth observed — confirm with LVDT/optical survey',
         'Restrict heavy traffic and schedule visual inspection within 48 h.',
       )
     } else if (rupture && damageClock === 26) {

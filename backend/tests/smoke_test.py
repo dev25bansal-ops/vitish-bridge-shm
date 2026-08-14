@@ -368,15 +368,34 @@ def test_ws():
         async with websockets.connect("ws://127.0.0.1:8976") as c:
             hello = json.loads(await c.recv())
             assert hello["topic"] == "hello", hello
+            # bridge replays the current storyboard scenario on connect
+            snap = json.loads(await c.recv())
+            assert snap["topic"] == "control/cmd", snap
             bus.publish("bridge/z24/accel",
                         {"bridge": "z24", "node": 6, "samples": [1.0] * 100, "ts": 1.0})
             msg = json.loads(await asyncio.wait_for(c.recv(), timeout=3.0))
-            return hello, msg
+            return hello, snap, msg
 
-    hello, msg = asyncio.new_event_loop().run_until_complete(run())
+    hello, snap, msg = asyncio.new_event_loop().run_until_complete(run())
     check("ws hello", hello.get("topic") == "hello")
+    check("ws scenario snapshot on connect",
+          snap.get("cmd") == "scenario" and snap.get("scenario") == "healthy")
     check("ws fanout envelope topic", msg.get("topic") == "bridge/z24/accel")
     check("ws fanout carries payload", msg.get("node") == 6 and len(msg.get("samples", [])) == 100)
+
+    # scenario cmd is forwarded live AND replayed to a fresh client as catch-up
+    bus.publish("control/cmd", {"cmd": "scenario", "scenario": "rupture", "source": "test"})
+
+    async def run2():
+        import websockets
+        async with websockets.connect("ws://127.0.0.1:8976") as c:
+            await c.recv()  # hello
+            snap2 = json.loads(await c.recv())
+            return snap2
+
+    snap2 = asyncio.new_event_loop().run_until_complete(run2())
+    check("ws scenario catch-up after change",
+          snap2.get("cmd") == "scenario" and snap2.get("scenario") == "rupture")
     ws.stop()
 
 

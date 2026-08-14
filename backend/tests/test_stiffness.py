@@ -60,6 +60,22 @@ def _feed(tracker, bus, f1: float, n_win: int, seed: int = 0) -> None:
             })
 
 
+def _feed_node(tracker, bus, node: int, f1: float, n_win: int,
+               seed: int = 0) -> None:
+    """Feed accel windows for ONE node (used to isolate the mid-span rule)."""
+    fs, n = 100, 1024
+    rng = np.random.default_rng(seed)
+    t = np.arange(n) / fs
+    for _ in range(n_win):
+        x = (0.02 * np.sin(2 * np.pi * f1 * t)
+             + 0.006 * np.sin(2 * np.pi * 4 * f1 * t)
+             + 0.01 * rng.standard_normal(n))
+        bus.publish("bridge/z24/accel", {
+            "bridge": "z24", "node": node, "ts": time.time(),
+            "samples": [float(v) for v in x], "fs": fs,
+        })
+
+
 def test_physics_model() -> None:
     print("[stiffness] Euler-Bernoulli FEM physics")
     # calibrated healthy fundamental
@@ -92,7 +108,7 @@ def test_tracker() -> None:
         check("healthy: no drift", s["ei_drift_pct"] < 2.0, str(s["ei_drift_pct"]))
         check("healthy: damage ~0", s["damage_pct"] < 3.0, str(s["damage_pct"]))
 
-        _feed(tracker, bus, 3.52, 8)
+        _feed(tracker, bus, 3.52, 25)
         s = tracker.snapshot()
         check("rupture: f1 drops", s["f1_meas"] < s["f1_ref"] - 0.15, str(s))
         check("rupture: EI drift > 8%", s["ei_drift_pct"] > 8.0, str(s["ei_drift_pct"]))
@@ -103,7 +119,7 @@ def test_tracker() -> None:
         check("mode shapes cover the deck",
               len(s["shapes"]) >= 2 and len(s["x"]) == len(s["shapes"][0]))
 
-        _feed(tracker, bus, 3.80, 8)
+        _feed(tracker, bus, 3.80, 25)
         s = tracker.snapshot()
         check("recovery: damage returns to ~0", s["damage_pct"] < 3.0,
               str(s["damage_pct"]))
@@ -111,10 +127,70 @@ def test_tracker() -> None:
         tracker.stop()
 
 
+def test_live_honesty() -> None:
+    print("[stiffness] live-replay honesty (mid-span rule + contamination guard)")
+    bus = events.get_bus()
+
+    # (1) mid-span-only: off-midspan channels (real Z24 ~5.1 Hz higher mode)
+    # must never feed the f1 estimate or the baseline.
+    t = StiffnessTracker(settings, bus)
+    t.start()
+    try:
+        _feed_node(t, bus, 6, 5.1, 40, seed=11)
+        s = t.snapshot()
+        check("off-midspan channel alone does not lock baseline",
+              not s["baseline_locked"], str(s["f1_meas"]))
+        _feed_node(t, bus, 7, 3.8, 40, seed=12)
+        s = t.snapshot()
+        check("mid-span channel locks baseline at ~3.8",
+              s["baseline_locked"] and 3.7 <= s["f1_ref"] <= 3.95,
+              str(s["f1_ref"]))
+        check("mid-span-only f1 ~3.8 (no 5.1 Hz contamination)",
+              abs(s["f1_meas"] - 3.8) < 0.15, str(s["f1_meas"]))
+    finally:
+        t.stop()
+
+    # (2) forced-tonal guard: a measured f1 RISING above baseline is a forced
+    # response, never a stiffness gain — EI drift clamps to 0, no damage claim.
+    t = StiffnessTracker(settings, bus)
+    t.start()
+    try:
+        _feed(t, bus, 3.80, 40, seed=21)
+        _feed(t, bus, 4.00, 25, seed=22)
+        s = t.snapshot()
+        check("rising f1 -> EI drift clamped to >= 0 (no 'stiffening')",
+              s["ei_drift_pct"] == 0.0, str(s["ei_drift_pct"]))
+        check("rising f1 -> no model-inferred damage",
+              s["damage_pct"] == 0.0, str(s["damage_pct"]))
+        check("rising f1 still reported honestly",
+              s["f1_meas"] > s["f1_ref"], str(s))
+    finally:
+        t.stop()
+
+    # (3) self-calibration: a bridge whose healthy fundamental sits at 3.9 Hz
+    # (real Z24) must infer damage from RELATIVE drift, not absolute f1.
+    t = StiffnessTracker(settings, bus)
+    t.start()
+    try:
+        _feed(t, bus, 3.90, 40, seed=31)
+        s = t.snapshot()
+        check("3.9 Hz healthy baseline reads 0 drift",
+              s["ei_drift_pct"] < 1.0, str(s["ei_drift_pct"]))
+        _feed(t, bus, 3.72, 25, seed=32)
+        s = t.snapshot()
+        check("relative drop -> EI drift > 5%",
+              s["ei_drift_pct"] > 5.0, str(s["ei_drift_pct"]))
+        check("relative drop -> inferred damage in 10-30%",
+              10.0 <= s["damage_pct"] <= 30.0, str(s["damage_pct"]))
+    finally:
+        t.stop()
+
+
 def main() -> int:
     try:
         test_physics_model()
         test_tracker()
+        test_live_honesty()
     except Exception as exc:
         global FAIL
         FAIL += 1

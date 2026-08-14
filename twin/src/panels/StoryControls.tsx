@@ -28,6 +28,21 @@ export const StoryControls = memo(function StoryControls({ onToggleMap }: StoryC
   const scenario = useStore((s) => s.scenario)
   const setScenario = useStore((s) => s.setScenario)
   const replayCollapse = useStore((s) => s.replayCollapse)
+  const stiffness = useStore((s) => s.stiffness)
+
+  // Honest narrative per data path.  The offline replay synthesizes a modal
+  // f1 drop (3.8 -> 3.5 Hz) so the overlay shows "f1 falling"; the live Z24
+  // path's rupture is a forced 4 Hz tonal that does NOT shift the modal f1, so
+  // the overlay honestly reads "vibration anomaly" instead of a stiffness drop.
+  const f1Dropped =
+    stiffness.damagePct > 5 ||
+    (stiffness.f1Meas > 0 && stiffness.f1Meas < stiffness.f1Ref * 0.97)
+  const hint =
+    scenario === 'rupture'
+      ? f1Dropped
+        ? 'STIFFNESS-LOSS ARC ACTIVE · f1 falling'
+        : 'VIBRATION ANOMALY · forced 4 Hz signature active'
+      : `SYSTEM NOMINAL · f1 ${stiffness.f1Meas ? stiffness.f1Meas.toFixed(1) : 3.8} Hz`
 
   return (
     <div className="story-controls">
@@ -36,9 +51,9 @@ export const StoryControls = memo(function StoryControls({ onToggleMap }: StoryC
         <button
           className={`story-btn${scenario === 'rupture' ? ' active rupture' : ''}`}
           onClick={replayCollapse}
-          title="Replay the cable-break story arc from the start"
+          title="Replay the stiffness-loss story arc from the start"
         >
-          ▶ Replay collapse
+          ▶ Replay damage arc
         </button>
         <button
           className={`story-btn${scenario === 'healthy' ? ' active' : ''}`}
@@ -57,7 +72,7 @@ export const StoryControls = memo(function StoryControls({ onToggleMap }: StoryC
         </button>
       </div>
       <div className={`scenario-hint ${scenario === 'rupture' ? 'rupture' : ''}`}>
-        {scenario === 'rupture' ? 'CABLE-BREAK STORY ARC ACTIVE' : 'SYSTEM NOMINAL'}
+        {hint}
       </div>
     </div>
   )

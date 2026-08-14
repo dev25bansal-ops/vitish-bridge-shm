@@ -124,7 +124,7 @@ def main(argv=None) -> int:
     else:
         live_mod.set_live_feed(None)
 
-    ws = ws_mod.WSBridge(cfg, bus)
+    ws = ws_mod.WSBridge(cfg, bus, scenario=args.scenario)
     ws.start()
     ws_port = cfg.ws_port
     for _ in range(40):  # wait for the ws bridge to bind (may fall back to a free port)

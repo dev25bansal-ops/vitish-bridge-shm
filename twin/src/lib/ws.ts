@@ -46,6 +46,16 @@ function ingest(payload: unknown): void {
   if (!payload || typeof payload !== 'object') return
   const p = payload as Record<string, unknown>
 
+  // --- control/cmd scenario: { cmd: "scenario", scenario: healthy|rupture }
+  // The storyboard driver publishes this once (t=75) and the ws bridge replays
+  // the current value to freshly-connected clients, so the LIVE path drives the
+  // same scenario the replay fixtures drive offline — labels, sensor colors and
+  // the collapse animation all follow the arc instead of staying "healthy".
+  if (p.cmd === 'scenario' && (p.scenario === 'healthy' || p.scenario === 'rupture')) {
+    s.setScenario(p.scenario)
+    return
+  }
+
   // --- accel (bridge/z24/accel): { bridge, node, ts, fs, samples[], rms, flag }
   if (Array.isArray(p.samples)) {
     const samples = (p.samples as number[]).map(Number)

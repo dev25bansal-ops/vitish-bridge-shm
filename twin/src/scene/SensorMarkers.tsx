@@ -16,22 +16,31 @@ const tmpP = new THREE.Vector3()
 const tmpS = new THREE.Vector3()
 const tmpC = new THREE.Color()
 
-// 50 "regulatory" fleet markers arranged on the river plane (10 x 5 grid).
+// 50 "regulatory" fleet markers on the water behind the hero bridge (10 x 5).
 const fleetPos = new Array<THREE.Vector3>(FLEET_COUNT)
 for (let i = 0; i < FLEET_COUNT; i++) {
   const col = i % 10
   const row = Math.floor(i / 10)
-  fleetPos[i] = new THREE.Vector3(-310 + col * 68, 1.4, 250 + row * 52)
+  fleetPos[i] = new THREE.Vector3(-135 + col * 30, 1.2, 30 + row * 34)
 }
 
 function sensorHealth(i: number): HealthState {
   const st = useStore.getState()
+  const { damagePct, eiDriftPct } = st.stiffness
   if (st.scenario !== 'rupture') return 'GREEN'
-  const near = Math.max(0, 1 - Math.abs(st.sensors[i].x + 18) / 80)
-  const sag = collapseState.sag
-  if (sag <= 0.25) return 'GREEN'
-  if (sag <= 0.5) return near > 0.5 ? 'AMBER' : 'GREEN'
-  if (sag <= 0.75) return near > 0.3 ? 'RED' : 'AMBER'
+  // Health tracks the node's own measured evidence, whichever path is live:
+  //   offline/replay -> model-inferred stiffness loss (damagePct / EI drift)
+  //   live (Z24)      -> measured vibration-anomaly evidence (flag/vib/state);
+  //                      the demo's rupture is a forced 4 Hz tonal, not an f1
+  //                      drop, so stiffness damage stays ~0 there (honest).
+  const liveSev =
+    st.live.state === 'RED' ? 40 : st.live.flag === 1 ? 30 : st.live.vib > 0.35 ? 20 : 0
+  // Main-span nodes (|x| < 15) degrade first; side-span nodes lag behind.
+  const nearMain = Math.abs(st.sensors[i].x) <= BRIDGE.mainHalf
+  const d = Math.max(damagePct, eiDriftPct * 0.5, liveSev)
+  if (d < 8) return 'GREEN'
+  if (d < 20) return nearMain ? 'AMBER' : 'GREEN'
+  if (d < 35) return nearMain ? 'RED' : 'AMBER'
   return 'RED'
 }
 

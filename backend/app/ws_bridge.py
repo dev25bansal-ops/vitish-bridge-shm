@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 
 class WSBridge:
-    def __init__(self, cfg: Settings, bus) -> None:
+    def __init__(self, cfg: Settings, bus, scenario: str = "healthy") -> None:
         self.cfg = cfg
         self.bus = bus
         self._clients: Dict[int, Dict[str, Any]] = {}
@@ -41,8 +41,13 @@ class WSBridge:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._stop_fut: Optional[asyncio.Future] = None
         self._sub_token: Optional[int] = None
+        self._cmd_token: Optional[int] = None
         self._thread: Optional[threading.Thread] = None
         self.bound_port: Optional[int] = None  # actual port after bind (may fall back)
+        # last known storyboard scenario (healthy|rupture), read from the
+        # control/cmd stream and replayed to freshly-connected clients so the
+        # twin never shows "SYSTEM NOMINAL" after a reload mid-arc.
+        self._scenario = scenario if scenario in ("healthy", "rupture") else "healthy"
 
     # -- lifecycle ------------------------------------------------------------
     def start(self) -> None:
@@ -65,6 +70,10 @@ class WSBridge:
                     self.bound_port = port
                     self._sub_token = self.bus.subscribe(
                         f"bridge/{self.cfg.bridge_id}/#", self._on_bus_event)
+                    # forward the storyboard control channel too (the demo
+                    # driver / API publish {cmd: scenario} there at t=75)
+                    self._cmd_token = self.bus.subscribe(
+                        "control/cmd", self._on_bus_event)
                     log.info("WS bridge listening on ws://%s:%d",
                              self.cfg.ws_host, port)
                     self._stop_fut = self._loop.create_future()
@@ -75,6 +84,8 @@ class WSBridge:
                     finally:
                         if self._sub_token is not None:
                             self.bus.unsubscribe(self._sub_token)
+                        if self._cmd_token is not None:
+                            self.bus.unsubscribe(self._cmd_token)
                         with self._lock:
                             self._clients.clear()
                         log.info("WS bridge stopped")
@@ -95,6 +106,11 @@ class WSBridge:
 
     # -- bus -> clients --------------------------------------------------------
     def _on_bus_event(self, topic: str, payload: Any) -> None:
+        if topic == "control/cmd" and isinstance(payload, dict) \
+                and payload.get("cmd") == "scenario" \
+                and payload.get("scenario") in ("healthy", "rupture"):
+            with self._lock:
+                self._scenario = payload["scenario"]
         envelope = {"topic": topic}
         if isinstance(payload, dict):
             envelope.update(payload)
@@ -121,8 +137,19 @@ class WSBridge:
             "version": __version__,
             "ts": contract.now(),
         })
+        # catch-up: a client connecting mid-arc must learn the current storyboard
+        # scenario (the cmd fires once at t=75 and would otherwise be missed).
+        with self._lock:
+            scenario = self._scenario
+        catchup = json.dumps({
+            "topic": "control/cmd",
+            "cmd": "scenario",
+            "scenario": scenario,
+            "source": "ws-snapshot",
+        })
         try:
             await conn.send(hello)
+            await conn.send(catchup)
             await asyncio.gather(self._sender(conn, q), self._reader(conn))
         except Exception:
             pass
