@@ -87,6 +87,15 @@ class FusionService:
         elif cmd == "load" and "value" in payload:
             self.load = float(max(0.0, min(1.0, payload["value"])))
             log.info("fusion: load index -> %.2f", self.load)
+        elif cmd == "scenario" and payload.get("scenario") == "healthy":
+            # Recovery from a held alert state: the simulator relaxes vib on its
+            # own (healthy ramps the damage injector out), but cv/load are held
+            # by fusion — restore their baselines here so the bridge returns to
+            # GREEN instead of stalling at AMBER with stale evidence.
+            self.cv = self.cfg.cv_default
+            self.load = self.cfg.load_default
+            log.info("fusion: scenario healthy -> cv %.2f, load %.2f (baseline reset)",
+                     self.cv, self.load)
 
     # -- accel path ----------------------------------------------------------------
     def on_accel(self, topic: str, payload: Any) -> None:

@@ -52,6 +52,34 @@ export interface StiffnessState {
   shapes: number[][] // FEM mode shapes, one array of deck deflections per mode
   baselineLocked: boolean
   stale: boolean
+  // D2-10 temperature-compensated overlay (simulated seasonal model)
+  simDay?: number
+  simClock?: string
+  tempC?: number
+  tempSource?: string
+  f1ExpectedThermal?: number
+  thermalShiftPct?: number
+  residualDriftPct?: number
+  residualBandPct?: number
+  residualInterpretation?: string
+}
+
+/** One channel's honest provenance (see backend/app/channel_models.py). */
+export interface ChannelProvenance {
+  node: number
+  source: string // 'z24-replay' | 'synthetic' | 'live-demo'
+  real: boolean
+  sensor: string
+}
+
+/** D1-5/D1-6 data-realism manifest — what am I actually looking at? */
+export interface ManifestState {
+  dataSource: 'z24-replay' | 'synthetic' | 'live-demo' | 'offline'
+  dataSourceLabel: string
+  channels: ChannelProvenance[]
+  honestyNote: string
+  liveFeedActive: boolean
+  liveFeedBridge: string
 }
 
 export interface Alert {
@@ -70,6 +98,7 @@ export interface TwinState {
   selectedSensorId: number | null
   live: LiveState
   stiffness: StiffnessState
+  manifest: ManifestState
   spectrum: number[]
   bhiTrend: number[]
   alerts: Alert[]
@@ -80,6 +109,7 @@ export interface TwinState {
   setSelectedSensorId: (id: number | null) => void
   setLive: (patch: Partial<LiveState>) => void
   setStiffness: (s: Partial<StiffnessState>) => void
+  setManifest: (m: Partial<ManifestState>) => void
   setSpectrum: (s: number[]) => void
   pushAlert: (a: Omit<Alert, 'id' | 'ts'>) => void
   setWsStatus: (s: WsStatus) => void
@@ -126,6 +156,16 @@ const STIFFNESS_EMPTY: StiffnessState = {
   stale: true,
 }
 
+/** Honest offline default until the manifest poller reports back. */
+const MANIFEST_OFFLINE: ManifestState = {
+  dataSource: 'offline',
+  dataSourceLabel: 'replay fixtures (backend unreachable)',
+  channels: [],
+  honestyNote: 'Waiting for the data-realism manifest (backend /api/manifest).',
+  liveFeedActive: false,
+  liveFeedBridge: '',
+}
+
 export const useStore = create<TwinState>((set, get) => ({
   bridges: [],
   sensors: [
@@ -138,6 +178,7 @@ export const useStore = create<TwinState>((set, get) => ({
   selectedSensorId: null,
   live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: 3.8, flag: 0 },
   stiffness: STIFFNESS_EMPTY,
+  manifest: MANIFEST_OFFLINE,
   spectrum: [],
   bhiTrend: [],
   alerts: [],
@@ -162,6 +203,8 @@ export const useStore = create<TwinState>((set, get) => ({
   },
 
   setStiffness: (patch) => set({ stiffness: { ...get().stiffness, ...patch } }),
+
+  setManifest: (patch) => set({ manifest: { ...get().manifest, ...patch } }),
 
   setSpectrum: (spectrum) => set({ spectrum }),
 

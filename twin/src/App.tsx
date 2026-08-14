@@ -4,6 +4,7 @@ import { BridgeMap } from './map/BridgeMap'
 import { HealthPanel } from './panels/HealthPanel'
 import { AlertsPanel } from './panels/AlertsPanel'
 import { CopilotPanel } from './panels/CopilotPanel'
+import { ProvenancePanel } from './panels/ProvenancePanel'
 import { SourceBadge, StoryControls } from './panels/StoryControls'
 import { useStore } from './store'
 
@@ -53,6 +54,7 @@ export default function App() {
           <HealthPanel />
           <AlertsPanel />
           <CopilotPanel />
+          <ProvenancePanel />
         </aside>
       </div>
 

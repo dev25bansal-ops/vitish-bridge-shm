@@ -31,6 +31,26 @@ async function poll(): Promise<void> {
       shapes: Array.isArray(s.shapes) ? (s.shapes as number[][]) : [],
       baselineLocked: s.baseline_locked === true,
       stale: s.stale === true,
+      // D2-10 thermal overlay fields (simulated seasonal model, see models/vibration/temperature.py)
+      simDay: typeof s.sim_day === 'number' ? (s.sim_day as number) : undefined,
+      simClock: typeof s.sim_clock === 'string' ? (s.sim_clock as string) : undefined,
+      tempC: typeof s.temp_c === 'number' ? (s.temp_c as number) : undefined,
+      tempSource: typeof s.temp_source === 'string' ? (s.temp_source as string) : undefined,
+      f1ExpectedThermal: typeof s.f1_expected_thermal === 'number'
+        ? (s.f1_expected_thermal as number)
+        : undefined,
+      thermalShiftPct: typeof s.thermal_shift_pct === 'number'
+        ? (s.thermal_shift_pct as number)
+        : undefined,
+      residualDriftPct: typeof s.residual_drift_pct === 'number'
+        ? (s.residual_drift_pct as number)
+        : undefined,
+      residualBandPct: typeof s.residual_band_pct === 'number'
+        ? (s.residual_band_pct as number)
+        : undefined,
+      residualInterpretation: typeof s.residual_interpretation === 'string'
+        ? (s.residual_interpretation as string)
+        : undefined,
     })
     // Keep the popup's live.freq honest when the overlay is authoritative.
     st.setLive({ freq: s.f1_meas as number })

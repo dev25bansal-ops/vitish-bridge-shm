@@ -182,6 +182,21 @@ def test_demo_arc() -> None:
     stable = pub.bhi[-1]
     check("RED stays stable", stable["state"] == "RED", str(stable))
 
+    # --- recovery: scenario healthy must restore GREEN (not stall at AMBER) --
+    # The simulator relaxes vib on its own; fusion must ALSO reset the cv/load
+    # evidence it holds, or the bridge stalls at AMBER with stale RED evidence.
+    bus.publish("control/cmd", {"cmd": "scenario", "scenario": "healthy"})
+    check("healthy resets cv evidence", fus.cv == settings.cv_default,
+          f"cv={fus.cv}")
+    check("healthy resets load evidence", fus.load == settings.load_default,
+          f"load={fus.load}")
+    _feed(bus, SyntheticPlayer("healthy", settings.nodes, seed=1), 20)
+    fus.publish_bhi()
+    rec = pub.bhi[-1]
+    check("recovery returns to GREEN", rec["state"] == "GREEN", str(rec))
+    check("recovery BHI in pinned band [75,90]",
+          75 <= rec["bhi"] <= 90, f"got {rec['bhi']}")
+
     fus.stop()
 
 
