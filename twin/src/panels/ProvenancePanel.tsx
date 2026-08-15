@@ -10,7 +10,6 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
   offline: { label: 'replay fixtures (backend unreachable)', cls: 'src-offline' },
 }
 
-const sourceLabel = (ds: string) => SOURCE_META[ds]?.label ?? ds
 const sourceCls = (ds: string) => SOURCE_META[ds]?.cls ?? 'src-offline'
 
 const realLabel = (c: ChannelProvenance) =>
@@ -22,15 +21,38 @@ const realLabel = (c: ChannelProvenance) =>
  * one-way-data label, the per-channel real-vs-modeled breakdown, the honesty
  * note, and the live-feed / simulated-clock provenance lines.  All text comes
  * from the backend manifest or the stiffness overlay — never invented here.
+ *
+ * HONESTY GATE (ROADMAP line 46): when the WS bridge is down but REST is up
+ * (backend starting, or WS bound to a busy port), the manifest poller still
+ * reports a real data source while the panels stream OFFLINE fixtures.  We
+ * surface the combined label — "REPLAY fixtures · backend WS offline" — and
+ * demote the manifest's real-source claim to a "resumes on reconnect" note
+ * instead of letting the two contradict each other on screen.
  */
 export const ProvenancePanel = memo(function ProvenancePanel() {
   const manifest = useStore((s) => s.manifest)
   const stiffness = useStore((s) => s.stiffness)
   const seeded = useStore((s) => s.seededDefect)
+  const wsStatus = useStore((s) => s.wsStatus)
 
-  const realCount = manifest.channels.filter((c) => c.real).length
-  const modeledCount = manifest.channels.length - realCount
+  // Line 85: defensive guard — never trust the wire shape. The manifest poller
+  // always sends an array, but a foreign/older backend could omit the field.
+  const channels = manifest.channels ?? []
+  const realCount = channels.filter((c) => c.real).length
+  const modeledCount = channels.length - realCount
   const seededActive = seeded.label && seeded.label !== 'none'
+  // Line 85: prefer the backend's own data_source_label (richer, canonical text
+  // straight from the manifest — e.g. "procedural synthetic (dev fallback — no
+  // real data)") over the local SOURCE_META copy; fall back only when the
+  // backend label is empty (the offline default).
+  const manifestLabel =
+    manifest.dataSourceLabel ||
+    (SOURCE_META[manifest.dataSource]?.label ?? manifest.dataSource)
+  // Line 46: WS down + REST up → stream is fixtures while the manifest claims a
+  // real source. 'offline' is the manifest's own honest default (backend fully
+  // down), which already agrees with the REPLAY badge — no extra label needed.
+  const replaying = wsStatus === 'replay'
+  const manifestClaimsSource = manifest.dataSource !== 'offline'
 
   return (
     <section className="panel">
@@ -45,19 +67,36 @@ export const ProvenancePanel = memo(function ProvenancePanel() {
       </div>
 
       <div className="src-line">
-        <span className={`source-dot ${sourceCls(manifest.dataSource)}`} />
-        <span className="src-label">{sourceLabel(manifest.dataSource)}</span>
-        {manifest.channels.length > 0 && (
+        {replaying && manifestClaimsSource ? (
+          <>
+            <span className="source-dot src-offline" />
+            <span className="src-label">REPLAY fixtures · backend WS offline</span>
+          </>
+        ) : (
+          <>
+            <span className={`source-dot ${sourceCls(manifest.dataSource)}`} />
+            <span className="src-label">{manifestLabel}</span>
+          </>
+        )}
+        {channels.length > 0 && !(replaying && manifestClaimsSource) && (
           <span className="src-count">
             {realCount} real · {modeledCount} modeled
           </span>
         )}
       </div>
 
-      {manifest.channels.length > 0 && (
+      {replaying && manifestClaimsSource && (
+        <div className="honesty-note">
+          Backend REST is up (manifest reports {manifestLabel}) but
+          the live WebSocket is offline — the stream you are watching is fixture
+          replay. The manifest source applies once the live WS reconnects.
+        </div>
+      )}
+
+      {channels.length > 0 && (
         <div className="chan-block">
           <div className="block-title">Per-channel source</div>
-          {manifest.channels.map((c) => (
+          {channels.map((c) => (
             <div className="chan-line" key={c.node}>
               <span className={`source-dot ${c.real ? 'src-real' : 'src-synthetic'}`} />
               <span className="chan-node">node {c.node}</span>

@@ -7,11 +7,17 @@ with simulated health — shown to demonstrate the regulator map view.  This is 
 deliberate disclosure beat in the demo script, never presented as live data.
 
 Health is deterministic (seeded per bridge id) so the map is stable across
-restarts while still showing a realistic spread of GREEN / AMBER / RED.
+restarts while still showing a realistic spread of GREEN / AMBER / RED — the
+seeded floor is 40.0 and the ceiling 98.0, so the full state range is reachable
+(about 26 GREEN / 16 AMBER / 6 RED across the 49 at the current draw, verified
+by test).  The 49 healths are computed ONCE and cached: they never change (they
+are seeded, not live), so every /api/bridges request reuses the same values
+instead of re-hashing and re-drawing 49 times.
 """
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 from typing import List
 
 import numpy as np
@@ -74,11 +80,11 @@ _REGULATORS: List[tuple] = [
 HERO = {
     "id": "z24",
     "name": "Z24 Benchmark Bridge (PS#99 hero)",
-    "city": "Mezzano",
-    "state": "TI",
+    "city": "Nottwil",
+    "state": "LU",
     "country": "Switzerland",
-    "lat": 46.1600,
-    "lon": 8.9300,
+    "lat": 47.135,
+    "lon": 8.165,
     "year_built": 1979,
     "length_m": 58,
     "kind": "post-tensioned-concrete-box-girder",
@@ -89,17 +95,35 @@ _STATE_COLORS = {"GREEN": "#16a34a", "AMBER": "#f59e0b", "RED": "#dc2626"}
 
 
 def simulated_health(bridge_id: str) -> tuple:
-    """Deterministic (bhi, state) for a regulator bridge id."""
+    """Deterministic (bhi, state) for a regulator bridge id.
+
+    Range [40.0, 98.0] (previously [62.0, 98.0]) so the full state spread is
+    reachable: a floor of 62 made RED (bhi < 50) impossible, contradicting the
+    module docstring's GREEN / AMBER / RED claim (ROADMAP line 47).  ~12.6% of
+    draws fall below 50, so the 49-bridge map shows a realistic ~6 RED.
+    """
     seed = int(hashlib.sha1(bridge_id.encode("utf-8")).hexdigest()[:8], 16)
     rng = np.random.default_rng(seed)
-    bhi = round(62.0 + 36.0 * (rng.random() ** 0.85), 1)
+    bhi = round(40.0 + 58.0 * (rng.random() ** 0.85), 1)
     return bhi, contract.state_for(bhi)
+
+
+@lru_cache(maxsize=1)
+def _all_regulator_healths() -> dict:
+    """Per-id (bhi, state) for every regulator, computed once.
+
+    Deterministic and immutable (seeded, not live), so caching is safe.  Without
+    this, /api/bridges calls all_bridges() three times per request and each call
+    re-hashes + re-draws all 49 (ROADMAP line 47 perf).
+    """
+    return {f"reg-{idx:02d}": simulated_health(f"reg-{idx:02d}")
+            for idx in range(1, len(_REGULATORS) + 1)}
 
 
 def _regulator_dict(idx: int, row: tuple) -> dict:
     name, city, state, lat, lon, year, length, kind = row
     bid = f"reg-{idx:02d}"
-    bhi, hstate = simulated_health(bid)
+    bhi, hstate = _all_regulator_healths()[bid]
     return {
         "id": bid,
         "name": name,

@@ -109,19 +109,33 @@ def test_live_and_registry() -> None:
     check("live note says never fused into z24 BHI",
           "never fused" in m["live_public_feed"]["note"])
 
-    cm.set_data_source("synthetic")
-    check("registry drives manifest",
-          cm.build_manifest(settings)["data_source"] == "synthetic")
-    # the simulator records whichever source it actually uses
-    sim_syn = sim_mod.Simulator(settings, None, bus=None, synthetic=True)
-    check("simulator (synthetic) registers synthetic",
-          cm.get_data_source() == "synthetic")
-    sim_syn.stop()
-    if (settings.data_dir / "inputs.npy").exists():
-        sim_real = sim_mod.Simulator(settings, None, bus=None, synthetic=False)
-        check("simulator (real data) registers z24-replay",
-              cm.get_data_source() == "z24-replay", cm.get_data_source())
-        sim_real.stop()
+    # ROADMAP line 58: the channel_models data source is a process-global — this
+    # mutation must be restored so it never leaks into other test modules in a
+    # shared process (pytest-safe / order-independent).
+    prev = cm.get_data_source()
+    try:
+        cm.set_data_source("synthetic")
+        check("registry drives manifest",
+              cm.build_manifest(settings)["data_source"] == "synthetic")
+        # the simulator records whichever source it actually uses
+        sim_syn = sim_mod.Simulator(settings, None, bus=None, synthetic=True)
+        check("simulator (synthetic) registers synthetic",
+              cm.get_data_source() == "synthetic")
+        sim_syn.stop()
+        if (settings.data_dir / "inputs.npy").exists():
+            sim_real = sim_mod.Simulator(settings, None, bus=None, synthetic=False)
+            check("simulator (real data) registers z24-replay",
+                  cm.get_data_source() == "z24-replay", cm.get_data_source())
+            sim_real.stop()
+        else:
+            # ROADMAP line 60: on a fresh clone inputs.npy is absent (991 MB,
+            # only .gitkeep is committed) — say so instead of silently skipping
+            # the real-data replay branch.
+            print("  [SKIP] real-data replay branch not exercised: "
+                  f"{settings.data_dir / 'inputs.npy'} absent "
+                  "(991 MB, gitignored — only .gitkeep is committed)")
+    finally:
+        cm.set_data_source(prev)
 
 
 def main() -> int:

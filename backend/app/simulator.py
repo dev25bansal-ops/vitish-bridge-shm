@@ -20,7 +20,7 @@ and fires a short broadband impact pulse on rupture onset.  It is controlled by
 the API POST /api/demo/scenario and the demo driver both publish.
 
 CLI:  python app/simulator.py [--scenario healthy|rupture] [--loops N]
-                                [--synthetic] [--rate 1.0]
+                                [--synthetic] [--rate 1.0] [--no-broker]
 """
 from __future__ import annotations
 
@@ -32,6 +32,12 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Pin BLAS to 1 thread BEFORE numpy loads (see backend/app/__init__ — measured
+# 50x: 0.18s -> 0.0035s per FEM solve).  Standalone `python app/simulator.py`
+# imports numpy here, ahead of the `app` package that normally sets it.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import numpy as np
 
@@ -248,6 +254,11 @@ class SyntheticPlayer:
         self.chunk = _CHUNK
         self.pos = 0
         from app import channel_models as cm
+        if mode not in ("healthy", "rupture"):
+            # item 12: an unknown mode used to be silently treated as healthy,
+            # hiding a typo until the demo looked wrong. Fail loudly instead.
+            raise ValueError(f"unknown SyntheticPlayer mode {mode!r}; "
+                             f"expected 'healthy' or 'rupture'")
         if mode == "rupture":
             base = SyntheticPinkBase(nodes, fs=fs, duration_s=duration_s,
                                      seed=seed, rms_healthy=rms_healthy)
@@ -487,45 +498,21 @@ class Simulator:
 
     # -- run loop -----------------------------------------------------------------
     def run(self) -> None:
-        if not self.publisher.wait_connected(timeout=3.0):
+        if self.publisher is not None and not self.publisher.wait_connected(timeout=3.0):
             log.warning("MQTT broker not reachable — streaming over the event bus only")
         tick = 0
         seg = 0
         while not self._stop.is_set():
-            ts = contract.now()
-            for node in self.cfg.nodes:
-                win = self.injector.current_window(node)
-                rms = float(np.sqrt(np.mean(win ** 2)))
-                flag = self.injector.rms_flag(rms)
-                topic = contract.TOPIC_ACCEL.format(bridge=self.cfg.bridge_id)
-                payload = {
-                    "bridge": self.cfg.bridge_id,
-                    "node": int(node),
-                    "ts": round(ts, 3),
-                    "fs": self.cfg.fs,
-                    "samples": [round(float(x), 6) for x in win],
-                    "rms": round(rms, 6),
-                    "flag": flag,
-                    "msg_id": f"sim-{tick}-{node}",
-                }
-                emit(topic, payload, self.publisher, bus=self.bus,
-                     qos=contract.QOS_TELEMETRY)
-
-            # node heartbeat every 10 s
-            if tick % 10 == 0:
-                self.publisher.publish_status(node=self.cfg.nodes[0],
-                                              online=True,
-                                              rssi=-62 + (tick // 10) % 5)
-            # damage-level control/status for the twin (1/s)
-            if self.bus is not None:
-                self.bus.publish("control/status", {
-                    "cmd": "alpha", "scenario": self.injector.scenario,
-                    "alpha": round(self.injector.alpha, 3),
-                    # D2-12 seeded-defect narrative (progress, FEM f1, EI loss)
-                    "seeded": self.injector.seeded_state(),
-                    "ts": contract.now(),
-                })
-
+            try:
+                self._tick(tick)
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                # A single player/emit fault must not kill this daemon thread
+                # silently while the rest of the stack keeps streaming stale data
+                # (item 10, ROADMAP-NEXT). Log it and carry on — the cadence and
+                # the phase accumulator still advance below.
+                log.exception("simulator tick %d failed (%s) — continuing", tick, exc)
             self.injector.tick()
             tick += 1
             seg = tick // _CHUNKS_PER_SEG
@@ -533,6 +520,41 @@ class Simulator:
                 log.info("simulator finished (%d segments)", self.loops)
                 break
             self._stop.wait(1.0 / self.rate)
+
+    def _tick(self, tick: int) -> None:
+        ts = contract.now()
+        for node in self.cfg.nodes:
+            win = self.injector.current_window(node)
+            rms = float(np.sqrt(np.mean(win ** 2)))
+            flag = self.injector.rms_flag(rms)
+            topic = contract.TOPIC_ACCEL.format(bridge=self.cfg.bridge_id)
+            payload = {
+                "bridge": self.cfg.bridge_id,
+                "node": int(node),
+                "ts": round(ts, 3),
+                "fs": self.cfg.fs,
+                "samples": [round(float(x), 6) for x in win],
+                "rms": round(rms, 6),
+                "flag": flag,
+                "msg_id": f"sim-{tick}-{node}",
+            }
+            emit(topic, payload, self.publisher, bus=self.bus,
+                 qos=contract.QOS_TELEMETRY)
+
+        # node heartbeat every 10 s (no MQTT under --no-broker)
+        if tick % 10 == 0 and self.publisher is not None:
+            self.publisher.publish_status(node=self.cfg.nodes[0],
+                                          online=True,
+                                          rssi=-62 + (tick // 10) % 5)
+        # damage-level control/status for the twin (1/s)
+        if self.bus is not None:
+            self.bus.publish("control/status", {
+                "cmd": "alpha", "scenario": self.injector.scenario,
+                "alpha": round(self.injector.alpha, 3),
+                # D2-12 seeded-defect narrative (progress, FEM f1, EI loss)
+                "seeded": self.injector.seeded_state(),
+                "ts": contract.now(),
+            })
 
     def stop(self) -> None:
         self._stop.set()
@@ -573,21 +595,27 @@ def main(argv: Optional[List[str]] = None) -> int:
     setup_logging()
     cfg = settings
     bus = get_bus()
-    publisher = Publisher(cfg)
-    publisher.start()
+    # --no-broker: skip MQTT entirely; emit() falls back to the event bus
+    publisher = None if args.no_broker else Publisher(cfg)
+    if publisher is not None:
+        publisher.start()
 
     sim = Simulator(cfg, publisher, bus=bus, synthetic=args.synthetic,
                     scenario=args.scenario, loops=args.loops, rate=args.rate)
     log.info("simulator data source: %s", sim.data_source)
-    log.info("publishing accel on %s every ~1s per node %s",
-             cfg.accel_topic(), cfg.nodes)
+    if publisher is None:
+        log.info("--no-broker: streaming on the event bus only (no MQTT)")
+    else:
+        log.info("publishing accel on %s every ~1s per node %s",
+                 cfg.accel_topic(), cfg.nodes)
     try:
         sim.run()
     except KeyboardInterrupt:
         print("\nsimulator stopped (Ctrl-C)")
     finally:
         sim.stop()
-        publisher.stop()
+        if publisher is not None:
+            publisher.stop()
     return 0
 
 

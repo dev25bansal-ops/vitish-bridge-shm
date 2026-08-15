@@ -57,14 +57,16 @@ export const SensorMarkers = memo(function SensorMarkers() {
     if (!m) return
     const st = useStore.getState()
     for (let i = 0; i < SENSOR_COUNT; i++) {
-      m.setColorAt(i, tmpC.set(stateHex(sensorHealth(i))).clone())
+      // setColorAt copies r/g/b into the instance buffer — passing tmpC
+      // directly needs no .clone() (the `.clone()` here would allocate a new
+      // Color per call for nothing).
+      m.setColorAt(i, tmpC.set(stateHex(sensorHealth(i))))
     }
     for (let i = SENSOR_COUNT; i < TOTAL; i++) {
       const b = st.bridges[i - SENSOR_COUNT]
-      m.setColorAt(i, tmpC.set(stateHex(b ? b.state : 'GREEN')).clone())
+      m.setColorAt(i, tmpC.set(stateHex(b ? b.state : 'GREEN')))
     }
     if (m.instanceColor) m.instanceColor.needsUpdate = true
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useFrame((state) => {

@@ -118,13 +118,13 @@ Ranking already re-ordered per the adversarial critic. Mapping keys: **BHI** = 1
 
 ## 4. Honest reality-check (from the adversarial critic, verified against this repo)
 
-Three blockers before phase 2:
+**✅ All three blockers RESOLVED (2026-08-14/15) — analysis kept for history.**
 
-1. **Bridge identity is incoherent.** `contract.py:21` sets `bridge_id="z24"` (30 m prestressed-concrete box girder, f1 3–4 Hz, pinned-pinned) but `MorbiBridge.tsx` renders a 230 m **cable-stayed** deck whose first mode is ~0.3–0.6 Hz global. The EI-from-frequency proxy (item 7) is wrong physics shown on a cable-stayed mesh — a structural reviewer catches it in under a minute. **Decide ONE identity:** adopt a 30 m box-girder mesh to match the Z24 physics, or keep the Morbi cable-stayed deck and make item 7 a cable-stayed frame FE (harder).
-2. **The demo arc is a memory artifact, not an acceptance test.** Only `87.0` (config.py:114) and the GREEN/AMBER/RED thresholds (contract.py:88) exist; 67.5 and 33.6 appear nowhere. The arc is *emergent* from commanded cv/load + the spectral heuristic. **Pin it as a regression test with tolerances before any stream change.**
-3. **cv is as scripted as load.** The demo path commands `cv=0.30/0.55` via `control/cmd`; real CrackSeg9k inference is not wired in (a frame topic already exists). Items 6/8/14's "updated by the measured crack index" update a *scripted* number until real inference replaces the commands. Also: **mm-width crack classes need GSD/camera calibration** the pipeline lacks — report *relative* severity with an explicit GSD note instead.
+1. **Bridge identity is incoherent.** (…box girder vs cable-stayed mesh…) **Decide ONE identity:** adopt a 30 m box-girder mesh to match the Z24 physics, or keep the Morbi cable-stayed deck and make item 7 a cable-stayed frame FE (harder). — **✅ RESOLVED (D2-12):** `MorbiBridge.tsx` now renders a parametric **Z24 box girder** (58 m 14+30+14, two piers, f1 3.8 Hz healthy — no towers, no cables); the EI-from-frequency proxy is now correct physics on the correct mesh. (`collapse.ts` still carries dead `cableBroken`/`cableDrop` legacy flags — slated for removal in the scene-hygiene batch.)
+2. **The demo arc is a memory artifact, not an acceptance test.** … **Pin it as a regression test with tolerances before any stream change.** — **✅ RESOLVED (D1-1 + line 73):** the arc is now pinned as **gate 15/15** (`test_demo_arc.py` + `scripts/verify_demo_arc.py`) re-checking 87.1 / 67.5 / 33.6 against the real production pipeline on every change.
+3. **cv is as scripted as load.** … **report *relative* severity with an explicit GSD note instead.** — **✅ RESOLVED (lines 42/72):** the demo crack beats now run real `crack_seg.pt` strict-YOLO inference on curated CC0 frames (`cv_feed.py`); the scripted fallback is tagged `cv_feed-fallback`, and severity is reported relative with an explicit GSD note in the manifest.
 
-**Cheapest highest-value win (~1–2 h):** the simulated clock / time-lapse label + the regression test pin. Everything temporal (thermal regression, Markov fan, WIM history) reads as theater inside an unlabeled 175 s demo.
+**Cheapest highest-value win (~1–2 h):** the simulated clock / time-lapse label + the regression test pin. — **✅ DELIVERED:** D2-8 sim-clock badge + D2-9 staleness glyphs + the arc pin above.
 
 ---
 

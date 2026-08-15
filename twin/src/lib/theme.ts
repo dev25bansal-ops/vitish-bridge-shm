@@ -16,6 +16,9 @@ export const STATE_COLORS: Record<HealthState, string> = {
 
 export const ACCENT = '#0d9488' // teal-600 · swap to '#2563eb' for a blue accent
 
+/** Neutral grey for any state the twin hasn't been taught to color. */
+export const NEUTRAL = '#7c8ea0'
+
 export function stateHex(state: HealthState): string {
-  return STATE_COLORS[state] ?? '#7c8ea0'
+  return STATE_COLORS[state] ?? NEUTRAL
 }

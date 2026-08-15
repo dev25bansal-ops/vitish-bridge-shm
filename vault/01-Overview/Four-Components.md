@@ -11,7 +11,7 @@ The hackathon requires exactly four components. Each maps to a repo module and a
 |---|---|---|---|---|
 | 1 | **IoT sensors** | `simulator/` + `mqtt/` | Z24 replay simulator (nodes 6–8), ESP32-S3 + ADXL355 stretch goal | 2:00–4:00 LIVE: sensor stream labeled "Z24 · 100 Hz" or "LIVE" |
 | 2 | **Computer vision** | `cv/` | YOLO26s-seg binary crack segmenter on SDNET2018 | 2:00–4:00: crack detected → overlay |
-| 3 | **Digital twin** | `twin/` | R3F parametric Morbi-style suspension bridge + MapLibre 50-bridge view | 2:00–4:00: twin highlights affected section, BHI 87 → 12 |
+| 3 | **Digital twin** | `twin/` | R3F parametric Z24 box-girder bridge + MapLibre 50-bridge view | 2:00–4:00: twin highlights affected section, BHI 87 → 34 (verified arc, see [[Storyboard]]) |
 | 4 | **Predictive maintenance** | `vibration/` + `fusion/` | VAE+OCSVM / LSTM-AE on temp-compensated features → BHI + copilot advice | 2:00–4:00: anomaly rises; copilot: "load restriction + strain-gauge verification" |
 
 ## Data flow (one hero demo path)

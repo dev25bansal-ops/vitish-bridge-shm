@@ -13,6 +13,13 @@ services:
       - ./docker-data/mosquitto/data:/mosquitto/data
       - ./docker-data/mosquitto/log:/mosquitto/log
       - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      # Liveness probe (item 8, ROADMAP-NEXT): pub a retained healthcheck msg,
+      # then confirm the broker echoes it back — no external tooling needed.
+      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -p 1883 -t vitish/health -m ok -r && mosquitto_sub -h 127.0.0.1 -p 1883 -t vitish/health -C 1 -W 2"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   db:

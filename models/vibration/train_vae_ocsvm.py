@@ -264,6 +264,13 @@ def main(argv: list[str] | None = None) -> int:
 
     from sklearn.preprocessing import StandardScaler
     scaler = StandardScaler().fit(X)
+    # A near-zero-variance feature (e.g. an always-empty frequency band) yields a
+    # scale of ~1e-8, so standardization explodes to ~1e4-1e8 and every score
+    # saturates identically for healthy AND damaged windows (measured 0.9743 on
+    # the shipped artifact) — the trained ensemble becomes INERT and the demo arc
+    # rides entirely on the deterministic spectral floor.  Clamp the denominator
+    # so retrains stay discriminative (ROADMAP line 40 / line 117).
+    scaler.scale_ = np.maximum(np.asarray(scaler.scale_), 1e-6)
     Xs = scaler.transform(X).astype(np.float32)
 
     vae, recon_losses = train_vae(Xs, args.epochs, args.mode, args.latent_dim,

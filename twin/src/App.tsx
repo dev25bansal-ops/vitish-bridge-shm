@@ -10,7 +10,8 @@ import { CopilotPanel } from './panels/CopilotPanel'
 import { ProvenancePanel } from './panels/ProvenancePanel'
 import { SimClockBadge } from './panels/SimClockBadge'
 import { SourceBadge, StoryControls } from './panels/StoryControls'
-import { useStore } from './store'
+import { ErrorBoundary } from './ErrorBoundary'
+import { useStore, WINDOW_LABEL } from './store'
 
 export default function App() {
   const [showMap, setShowMap] = useState(true)
@@ -43,34 +44,36 @@ export default function App() {
         <div className="top-right">
           <SourceBadge />
           <SimClockBadge />
-          <span className="top-window">window 10.24 s · fs 100 Hz</span>
+          <span className="top-window">{WINDOW_LABEL}</span>
         </div>
       </header>
 
-      <div className={`hud-body${showMap ? '' : ' no-map'}`}>
-        {showMap && (
-          <aside className="hud-left">
-            <BridgeMap />
-          </aside>
-        )}
-        <main className="hud-center">
-          {geoView ? (
-            <GeoContext />
-          ) : (
-            <>
-              <TwinCanvas />
-              <SceneOverlay />
-            </>
+      <ErrorBoundary label="main view">
+        <div className={`hud-body${showMap ? '' : ' no-map'}`}>
+          {showMap && (
+            <aside className="hud-left">
+              <BridgeMap />
+            </aside>
           )}
-        </main>
-        <aside className="hud-right">
-          <HealthPanel />
-          <DeteriorationPanel />
-          <AlertsPanel />
-          <CopilotPanel />
-          <ProvenancePanel />
-        </aside>
-      </div>
+          <main className="hud-center">
+            {geoView ? (
+              <GeoContext />
+            ) : (
+              <>
+                <TwinCanvas />
+                <SceneOverlay />
+              </>
+            )}
+          </main>
+          <aside className="hud-right">
+            <HealthPanel />
+            <DeteriorationPanel />
+            <AlertsPanel />
+            <CopilotPanel />
+            <ProvenancePanel />
+          </aside>
+        </div>
+      </ErrorBoundary>
 
       <footer className="hud-bottom">
         <StoryControls

@@ -67,6 +67,19 @@ docker-data/
 .verify/*_dom.html
 .verify/geo_verify.cjs
 .verify/arc_calib.py
+# Diagnostic probe scripts (superseded by backend/tests/* when promoted)
+.verify/*.py
+
+# Vendor tooling for the ESP edge node (downloaded binaries/drivers/logs — keep
+# on disk for the hardware work, never commit; only the human-authored helper
+# scripts under tools/ are tracked)
+tools/arduino-cli/arduino-cli.exe
+tools/arduino-cli/arduino-cli.zip
+tools/esp/*.bin
+tools/esp/*.zip
+tools/esp/*.log
+tools/esp/cp210x_drv/
+tools/esp/driver_install.log
 
 # OS
 Thumbs.db

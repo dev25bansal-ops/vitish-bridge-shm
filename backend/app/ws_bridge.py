@@ -33,9 +33,14 @@ log = logging.getLogger(__name__)
 
 
 class WSBridge:
-    def __init__(self, cfg: Settings, bus, scenario: str = "healthy") -> None:
+    def __init__(self, cfg: Settings, bus, scenario: str = "healthy",
+                 store=None) -> None:
         self.cfg = cfg
         self.bus = bus
+        # Optional persistence store; when present, freshly-connected clients get
+        # an alert catch-up (item 7, ROADMAP-NEXT) so a reload mid-arc never
+        # shows an empty AlertsPanel.
+        self.store = store
         self._clients: Dict[int, Dict[str, Any]] = {}
         self._lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -121,9 +126,22 @@ class WSBridge:
             clients = list(self._clients.values())
         for c in clients:
             try:
-                self._loop.call_soon_threadsafe(c["queue"].put_nowait, text)
+                # QueueFull would otherwise fire INSIDE the event loop (uncaught)
+                # when a slow/backgrounded tab falls behind -> silently missing
+                # the BHI band-crossing. Drop-oldest keeps the newest frame.
+                self._loop.call_soon_threadsafe(self._enqueue, c["queue"], text)
             except Exception:
                 pass
+
+    def _enqueue(self, q: asyncio.Queue, text: str) -> None:
+        """Push a frame to a client queue, dropping the oldest frame when full."""
+        try:
+            if q.full():
+                q.get_nowait()
+                log.warning("WS bridge: client queue full — dropped oldest frame")
+            q.put_nowait(text)
+        except Exception:
+            pass
 
     # -- per-client handler ------------------------------------------------------
     async def _handler(self, conn) -> None:
@@ -147,9 +165,15 @@ class WSBridge:
             "scenario": scenario,
             "source": "ws-snapshot",
         })
+        # Alert catch-up: replay the last few persisted alerts (oldest first) so
+        # a reload mid-arc doesn't show an empty AlertsPanel.  Honest failure:
+        # if the store is missing or down, we simply skip the replay.
+        alert_frames = self._alert_catchup()
         try:
             await conn.send(hello)
             await conn.send(catchup)
+            for f in alert_frames:
+                await conn.send(f)
             await asyncio.gather(self._sender(conn, q), self._reader(conn))
         except Exception:
             pass
@@ -160,6 +184,33 @@ class WSBridge:
                 await conn.close()
             except Exception:
                 pass
+
+    def _alert_catchup(self, limit: int = 8) -> list:
+        """Replay recent alerts as normal bridge/<id>/alert frames (oldest first)."""
+        if self.store is None or not hasattr(self.store, "recent_alerts"):
+            return []
+        try:
+            rows = self.store.recent_alerts(self.cfg.bridge_id, limit=limit)
+        except Exception:
+            log.warning("WS bridge: alert catch-up unavailable (store down)")
+            return []
+        frames = []
+        for r in rows:
+            try:
+                frame = {
+                    "topic": contract.TOPIC_ALERT.format(bridge=self.cfg.bridge_id),
+                    "bridge": self.cfg.bridge_id,
+                    "ts": float(r.get("ts") or contract.now()),
+                    "severity": str(r.get("severity") or "info"),
+                    "source": str(r.get("source") or "fusion"),
+                    "text": str(r.get("text") or ""),
+                    "recommendation": str(r.get("recommendation") or ""),
+                    "ws_snapshot": True,
+                }
+                frames.append(json.dumps(frame))
+            except Exception:
+                continue
+        return frames
 
     async def _sender(self, conn, q: asyncio.Queue) -> None:
         while True:
@@ -172,3 +223,22 @@ class WSBridge:
                 await conn.recv()  # twin may send anything; we ignore it
         except Exception:
             return
+
+
+# ---------------------------------------------------------------------------
+# process-wide handle so the API / config can report the ACTUAL bound port
+# (run_all.py walks ws_port upward when the default is taken)
+# ---------------------------------------------------------------------------
+_current: Optional["WSBridge"] = None
+
+
+def set_current_bridge(b: Optional["WSBridge"]) -> None:
+    global _current
+    _current = b
+
+
+def get_bound_port() -> Optional[int]:
+    if _current is None:
+        return None
+    with _current._lock:
+        return _current.bound_port

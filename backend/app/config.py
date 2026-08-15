@@ -71,7 +71,12 @@ def _env_list_int(name: str, default: List[int]) -> List[int]:
     v = os.getenv(name)
     if not v:
         return list(default)
-    return [int(x) for x in v.split(",") if x.strip()]
+    # guard: a non-integer node id (e.g. "6,7,eight") must not crash config
+    # loading — fall back to the default list instead of raising (item 11).
+    try:
+        return [int(x) for x in v.split(",") if x.strip()]
+    except ValueError:
+        return list(default)
 
 
 @dataclass
@@ -92,7 +97,10 @@ class Settings:
     api_port: int = 8000
 
     # --- persistence ---------------------------------------------------------
-    db_dsn: str = "postgresql://vitish:vitish@localhost:5432/shm"
+    # No default credential (ROADMAP line 92): Postgres is opt-in via the
+    # VITISH_DB_DSN env var.  Empty db_dsn -> MemoryStore (get_store guards it);
+    # the demo runs on MemoryStore anyway.
+    db_dsn: str = ""
     state_cache_path: Path = BACKEND_DIR / "app" / "state_cache.json"
 
     # --- data / models -------------------------------------------------------
@@ -151,11 +159,11 @@ def load_settings() -> Settings:
         nodes=_env_list_int("VITISH_NODES", contract.Z24_SIM_NODES),
         broker_host=_env_str("VITISH_MQTT_HOST", "localhost"),
         broker_port=_env_int("VITISH_MQTT_PORT", 1883),
+        ws_host=_env_str("VITISH_WS_HOST", "0.0.0.0"),
         ws_port=_env_int("VITISH_WS_PORT", 8765),
+        api_host=_env_str("VITISH_API_HOST", "0.0.0.0"),
         api_port=_env_int("VITISH_API_PORT", 8000),
-        db_dsn=_env_str(
-            "VITISH_DB_DSN", "postgresql://vitish:vitish@localhost:5432/shm"
-        ),
+        db_dsn=_env_str("VITISH_DB_DSN", ""),
         accel_flag_factor=_env_float("VITISH_ACCEL_FLAG_FACTOR", 2.5),
         accel_flag_floor=_env_float("VITISH_ACCEL_FLAG_FLOOR", 0.15),
         cv_default=_env_float("VITISH_CV_DEFAULT", 0.10),

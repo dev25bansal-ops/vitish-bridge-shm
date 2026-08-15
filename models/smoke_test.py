@@ -101,6 +101,11 @@ def test_cv() -> None:
     clean = np.full((256, 256, 3), 150, np.uint8)
     dets_clean = det.detect(clean)
     ok(all(x["conf"] < 0.95 for x in dets_clean), "crack heuristic: clean image stays low-confidence")
+    # strict (return_yolo_only) mode with no model loaded returns [] — the
+    # heuristic is never consulted, so clean-frame verification measures the
+    # real model and the demo clean-frame policy can't flicker (ROADMAP line 39)
+    strict = det.detect(img, return_yolo_only=True)
+    ok(strict == [], "crack heuristic: strict mode with no YOLO model returns [] (heuristic never consulted)")
 
 
 def test_bhi() -> None:

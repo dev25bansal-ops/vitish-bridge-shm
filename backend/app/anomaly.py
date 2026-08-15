@@ -43,13 +43,28 @@ _HEALTHY_SCORE_CAP = 0.35
 _BASELINE_ALPHA = 0.05
 
 # deterministic per-process baseline (reset-able for tests / live re-fit)
+# NOTE (item 11, ROADMAP-NEXT): this is a single PROCESS-GLOBAL envelope shared
+# by all three nodes — the healthy reference is calibrated over the whole fleet
+# stream, not per node.  That is deliberate (a fleet-wide ambient baseline is
+# more stable than three tiny per-node EMAs), and `reset_anomaly_baseline()` is
+# the single knob for tests / data-source switches.
 _baseline = None  # {"tonality": float, "low_share": float, "rms": float}
+
+# ROADMAP line 68: the floor-vs-trained split of the LAST scored window, so the
+# UI can transparently credit whichever detector carries the arc. Informational
+# only — never read by the scoring path, so it can never influence the BHI arc.
+_last_evidence: dict = {"floor": 0.0, "trained_push": 0.0, "score": 0.0}
 
 
 def reset_anomaly_baseline() -> None:
     """Clear the healthy reference envelope (used by tests and live re-fit)."""
     global _baseline
     _baseline = None
+
+
+def last_evidence() -> dict:
+    """Copy of the floor-vs-trained split of the last scored window."""
+    return dict(_last_evidence)
 
 
 def _features(arr: np.ndarray, fs: int) -> dict:
@@ -121,6 +136,9 @@ def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
     ensemble (``models/vibration/demo_predictor``) may ADD a trained-model push
     -- but ONLY as its envelope-relative deviation (see demo_predictor), so an
     uninformative or missing model contributes ~0 and can never break the arc.
+    Currently (ROADMAP line 40 relabel) the shipped trained ensemble is
+    EXPERIMENTAL and INERT — its scaler is degenerate, so `trained_push` is
+    0.0 and this floor alone carries the demo arc.
     """
     arr = np.asarray(window, dtype=np.float64).reshape(-1)
     if arr.size < 64:
@@ -131,10 +149,19 @@ def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
     push = 0.0
     try:
         from models.vibration import demo_predictor  # type: ignore[import-not-found]
-        push = float(demo_predictor.trained_push(arr, fs=fs))
+        # trained_push is documented as returning [0, 1] (envelope-relative
+        # deviation); item 11 enforces the bound so a buggy model can never pull
+        # the floor score negative or past 1.0.
+        push = float(np.clip(float(demo_predictor.trained_push(arr, fs=fs)), 0.0, 1.0))
     except Exception as exc:  # pragma: no cover - depends on models agent
         log.debug("trained push unavailable, floor only (%s)", exc)
 
-    score = min(1.0, base_score + push)
-    uncertainty = min(0.40, base_unc + 0.20 * push)
+    score = float(np.clip(base_score + push, 0.0, 1.0))
+    uncertainty = float(np.clip(base_unc + 0.20 * push, 0.0, 0.40))
+    # ROADMAP line 68: record the floor vs trained split for the UI. Written
+    # AFTER scoring, so this bookkeeping cannot perturb the arc.
+    global _last_evidence
+    _last_evidence = {"floor": round(base_score, 4),
+                      "trained_push": round(push, 4),
+                      "score": round(score, 4)}
     return score, uncertainty

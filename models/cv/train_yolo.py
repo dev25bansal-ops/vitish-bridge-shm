@@ -7,11 +7,20 @@ cv/train_yolo.py — train a YOLO segmentation model on the crack dataset.
 Model selection: pass any ultralytics-compatible model id/weights path.
 `--model auto` tries, in order: yolov8s-seg.pt, yolo11s-seg.pt, yolo26s-seg.pt
 (whichever ultralytics can load first — it will download pretrained weights the
-first time network is available). If a local `crack_seg.pt`/`best.pt` already
-exists, it is used to resume.
+first time network is available). If a local `models/weights/crack_seg.pt` (or
+a `best.pt` under `models/weights/yolo_runs/`) already exists, it is used to
+RESUME instead of downloading — so retraining works on an offline machine
+(ROADMAP line 64).  Pass `--model <id|path>` explicitly to force a pretrained
+base instead of the local weights.
 
 The best checkpoint is copied to models/weights/crack_seg.pt (the canonical
 location cv/inference.py and the backend load from).
+
+Data default (ROADMAP line 64): data/cv/yolo9k_sub2/data.yaml — the
+negatives-balanced 1/3 CrackSeg9k subset (2,062 cracked + 907 clean-negative
+crops, 100% CC0).  Bare retrains must NOT hit the all-positives set
+(data/cv/yolo/data.yaml), whose FP bias makes the model flag every concrete
+image.  `--data` overrides.
 
 Guards:
   * ultralytics missing -> clear message, non-zero exit (no crash).
@@ -27,7 +36,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WEIGHTS = REPO_ROOT / "models" / "weights"
-DEFAULT_DATA = REPO_ROOT / "data" / "cv" / "yolo" / "data.yaml"
+# ROADMAP line 64: negatives-balanced set is the default; the bare all-positives
+# yolo/data.yaml is FP-biased (every concrete image = cracked).
+DEFAULT_DATA = REPO_ROOT / "data" / "cv" / "yolo9k_sub2" / "data.yaml"
 
 _MODEL_CANDIDATES = ["yolov8s-seg.pt", "yolo11s-seg.pt", "yolo26s-seg.pt"]
 
@@ -46,6 +57,20 @@ def _pick_model(candidates: list[str]) -> str:
                        "pass --model <local weights path>")
 
 
+def _local_resume_path(outdir: Path) -> Path | None:
+    """Return a local weights path to resume from, or None.
+
+    ROADMAP line 64: the canonical `crack_seg.pt` wins, else the most recent
+    `best.pt` under yolo_runs/.  This is what makes retraining work offline —
+    a stock `--model yolov8s-seg.pt` would otherwise fail to download.
+    """
+    for cand in (outdir / "crack_seg.pt",
+                 *sorted((outdir / "yolo_runs").glob("*/weights/best.pt"))):
+        if cand.exists():
+            return cand
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Train YOLO-seg crack detector")
     ap.add_argument("--model", default="yolov8s-seg.pt",
@@ -57,9 +82,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workers", type=int, default=8,
                     help="dataloader workers (laptops w/ <16GB RAM: use 2-4 to "
                          "avoid pagefile thrash from worker prefetch caches)")
-    ap.add_argument("--cache", default=False,
-                    help="True to RAM-cache decoded images (fast epochs, needs "
-                         "~n_imgs*imgsz^2*3 bytes; keep False on low-RAM boxes)")
+    ap.add_argument("--cache", action="store_true",
+                    help="RAM-cache decoded images (fast epochs, needs "
+                         "~n_imgs*imgsz^2*3 bytes; omit on low-RAM boxes)")
     ap.add_argument("--device", default=None, help="'0','cpu', etc. (default: auto)")
     ap.add_argument("--outdir", default=str(DEFAULT_WEIGHTS))
     args = ap.parse_args(argv)
@@ -88,7 +113,25 @@ def main(argv: list[str] | None = None) -> int:
 
     model_id = args.model
     if model_id == "auto":
-        model_id = _pick_model(_MODEL_CANDIDATES)
+        # ROADMAP line 64: prefer local weights over downloading a pretrained
+        # base — 'auto' is a probe, and an offline machine can't download.
+        local = _local_resume_path(outdir)
+        if local is not None:
+            print(f"  [yolo] --model auto: resuming from local weights {local}")
+            model_id = str(local)
+        else:
+            model_id = _pick_model(_MODEL_CANDIDATES)
+    elif model_id in _MODEL_CANDIDATES:
+        # stock pretrained id requested; if a local crack_seg.pt already exists,
+        # the docstring promises resume-from-local (and offline machines would
+        # otherwise exit 3 on the failed download).  --model <explicit path>
+        # still overrides.
+        local = _local_resume_path(outdir)
+        if local is not None:
+            print(f"  [yolo] resuming from local weights {local} "
+                  f"(pass --model {model_id} explicitly to force a "
+                  "pretrained base)")
+            model_id = str(local)
     try:
         model = YOLO(model_id)
     except Exception as exc:

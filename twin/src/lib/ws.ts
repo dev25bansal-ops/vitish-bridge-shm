@@ -14,11 +14,13 @@ import { useStore, computeBhi, stateFor } from '../store'
 import type { AlertSource, Severity } from '../store'
 import { spectrumMagnitudes } from './fft'
 import { startReplay, stopReplay } from './fixtures'
+import { wsUrl, fetchBridges } from './config'
+import { warnOnce } from './warnOnce'
 
 // 127.0.0.1 (not "localhost") — the backend WS bridge binds IPv4 0.0.0.0, and
 // browsers resolve "localhost" to ::1 first, so the handshake stalls and the
-// 3 s fallback timer fires. Explicit IPv4 avoids the dual-stack race.
-const WS_URL = 'ws://127.0.0.1:8765'
+// 3 s fallback timer fires. Explicit IPv4 avoids the dual-stack race.  The
+// port comes from /api/config when the backend is up (lib/config.ts).
 const FALLBACK_TIMEOUT_MS = 3000
 const RETRY_DELAY_MS = 5000
 
@@ -41,7 +43,10 @@ function toSeverity(s: string): Severity {
   return s === 'info' || s === 'warning' || s === 'critical' ? s : 'info'
 }
 
-function ingest(payload: unknown): void {
+/** Contract-topic message parser → store updates. Exported so unit tests can
+ *  exercise the ingest guards directly (line 89); production only ever calls
+ *  it from `onmessage` below. */
+export function ingest(payload: unknown): void {
   const s = useStore.getState()
   if (!payload || typeof payload !== 'object') return
   const p = payload as Record<string, unknown>
@@ -67,7 +72,7 @@ function ingest(payload: unknown): void {
     return
   }
 
-  // --- bhi (bridge/z24/bhi): { bridge, ts, bhi, u, cv, vib, load, state }
+  // --- bhi (bridge/z24/bhi): { bridge, ts, bhi, u, cv, vib, load, state, vib_evidence }
   if (typeof p.bhi === 'number') {
     const cv = typeof p.cv === 'number' ? p.cv : s.live.cv
     const vib = typeof p.vib === 'number' ? p.vib : s.live.vib
@@ -75,7 +80,20 @@ function ingest(payload: unknown): void {
     const bhi = typeof p.bhi === 'number' ? (p.bhi as number) : computeBhi(cv, vib, load)
     const state = typeof p.state === 'string' ? (p.state as 'GREEN' | 'AMBER' | 'RED') : stateFor(bhi)
     const u = typeof p.u === 'number' ? (p.u as number) : s.live.u
-    s.setLive({ bhi, u, cv, vib, load, state })
+    // ROADMAP line 68: surface the floor-vs-trained split (vib_evidence) so the
+    // demo transparently credits whichever detector carries the arc.
+    const ve = p.vib_evidence as
+      | { floor?: unknown; trained_push?: unknown; score?: unknown }
+      | undefined
+    const vibEvidence =
+      ve && typeof ve.floor === 'number' && typeof ve.trained_push === 'number'
+        ? {
+            floor: ve.floor,
+            trained_push: ve.trained_push,
+            score: typeof ve.score === 'number' ? ve.score : vib,
+          }
+        : undefined
+    s.setLive({ bhi, u, cv, vib, load, state, vibEvidence })
     return
   }
 
@@ -126,6 +144,9 @@ function scheduleRetry(): void {
 function ensureReplay(): void {
   // startReplay() is idempotent (stops prior timers first) and sets wsStatus.
   startReplay()
+  // First time only: a breadcrumb that the LIVE bridge is unreachable, so a
+  // presenter/developer sees the replay fallback engage without spam.
+  warnOnce('ws', 'WebSocket bridge unreachable — REPLAY mode (auto-retries every 5 s)')
 }
 
 function attempt(): void {
@@ -137,12 +158,10 @@ function attempt(): void {
   }
   ws = null
 
-  let timedOut = false
-  const sock = new WebSocket(WS_URL)
+  const sock = new WebSocket(wsUrl())
   ws = sock
 
   const timeout = setTimeout(() => {
-    timedOut = true
     if (!live) {
       ensureReplay()
       scheduleRetry()
@@ -161,6 +180,8 @@ function attempt(): void {
       live = true
       stopReplay()
       useStore.getState().setWsStatus('live')
+      // backend-first sessions have no replay fixtures — populate the real fleet.
+      void fetchBridges()
     }
   }
 

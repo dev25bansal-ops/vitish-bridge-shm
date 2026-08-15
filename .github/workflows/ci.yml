@@ -1,0 +1,39 @@
+name: CI — backend gates
+
+# Runs the unified test runner (scripts/run_tests.sh) on every push and PR.
+# The runner executes all 15 standalone backend test scripts (14 under
+# backend/tests/ + the arc verifier scripts/verify_demo_arc.py); any failure
+# fails the job.  The pinned demo arc (GREEN 87.1 -> AMBER 67.5 -> RED 33.6)
+# is one of them (test_demo_arc.py + verify_demo_arc.py) and must NEVER break.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run unified backend test runner
+        env:
+          PYTHONIOENCODING: utf-8
+          OPENBLAS_NUM_THREADS: '1'
+        run: bash scripts/run_tests.sh
+
+      - name: Twin typecheck
+        run: |
+          cd twin
+          npm ci || npm install
+          npm run typecheck

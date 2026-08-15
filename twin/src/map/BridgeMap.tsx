@@ -4,7 +4,8 @@ import type { GeoJSONSource } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useStore } from '../store'
 import type { TwinState } from '../store'
-import { stateHex } from '../lib/theme'
+import { stateHex, STATE_COLORS, ACCENT } from '../lib/theme'
+import { matchStateColor } from '../lib/mapStyle'
 
 // OpenFreeMap public tiles — no API key. If they fail to load (offline), we
 // fall back to an inline SVG projection so the map still works with no network.
@@ -89,14 +90,14 @@ function SvgFallback({
   return (
     <div ref={boxRef} className="map-fallback">
       <svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Fleet map (offline SVG)">
-        <rect x={0} y={0} width={w} height={h} fill="#f8fafc" />
+        <rect x={0} y={0} width={w} height={h} fill="var(--bg)" />
         {Array.from({ length: 5 }, (_, i) => {
           const x = pad + i * gridStepX
-          return <line key={`v${i}`} x1={x} y1={pad} x2={x} y2={h - pad} stroke="#e2e8f0" strokeWidth={1} />
+          return <line key={`v${i}`} x1={x} y1={pad} x2={x} y2={h - pad} stroke="var(--grid)" strokeWidth={1} />
         })}
         {Array.from({ length: 6 }, (_, i) => {
           const y = pad + i * gridStepY
-          return <line key={`h${i}`} x1={pad} y1={y} x2={w - pad} y2={y} stroke="#e2e8f0" strokeWidth={1} />
+          return <line key={`h${i}`} x1={pad} y1={y} x2={w - pad} y2={y} stroke="var(--grid)" strokeWidth={1} />
         })}
         {bridges.map((b) => {
           const isHero = b.id === 'z24'
@@ -111,8 +112,8 @@ function SvgFallback({
               onClick={() => setSelectedBridgeId(b.id)}
               className="svg-point"
             >
-              {isSel && <circle cx={cx} cy={cy} r={9} fill="none" stroke="#0d9488" strokeWidth={1.5} />}
-              <circle cx={cx} cy={cy} r={isHero ? 6 : 4} fill={stateHex(state)} stroke="#ffffff" strokeWidth={1.5} />
+              {isSel && <circle cx={cx} cy={cy} r={9} fill="none" stroke={ACCENT} strokeWidth={1.5} />}
+              <circle cx={cx} cy={cy} r={isHero ? 6 : 4} fill={stateHex(state)} stroke="var(--panel)" strokeWidth={1.5} />
               {isHero && <circle cx={cx} cy={cy} r={11} fill="none" stroke={stateHex(state)} strokeOpacity={0.45} strokeWidth={1.5} />}
             </g>
           )
@@ -120,9 +121,11 @@ function SvgFallback({
       </svg>
       <div className="map-badge">OFFLINE MAP · SVG fallback</div>
       <div className="map-legend">
-        <span className="legend-dot" style={{ background: '#16a34a' }} />GREEN
-        <span className="legend-dot" style={{ background: '#d97706' }} />AMBER
-        <span className="legend-dot" style={{ background: '#dc2626' }} />RED
+        {(['GREEN', 'AMBER', 'RED'] as const).map((s) => (
+          <span key={s}>
+            <span className="legend-dot" style={{ background: STATE_COLORS[s] }} />{s}
+          </span>
+        ))}
       </div>
     </div>
   )
@@ -177,16 +180,7 @@ export const BridgeMap = memo(function BridgeMap() {
         type: 'fill',
         source: 'bridges',
         paint: {
-          'fill-color': [
-            'match',
-            ['get', 'state'],
-            'RED',
-            '#dc2626',
-            'AMBER',
-            '#d97706',
-            '#16a34a',
-            '#16a34a',
-          ],
+          'fill-color': matchStateColor(),
           'fill-opacity': 0.18,
         },
       })
@@ -196,16 +190,7 @@ export const BridgeMap = memo(function BridgeMap() {
         source: 'bridges',
         paint: {
           'circle-radius': 5,
-          'circle-color': [
-            'match',
-            ['get', 'state'],
-            'RED',
-            '#dc2626',
-            'AMBER',
-            '#d97706',
-            '#16a34a',
-            '#16a34a',
-          ],
+          'circle-color': matchStateColor(),
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.5,
         },
@@ -225,6 +210,31 @@ export const BridgeMap = memo(function BridgeMap() {
     map.on('load', () => {
       ok.loaded = true
       addSource()
+      // Fit the whole fleet (49 US regulators + the Swiss Z24 hero) so the
+      // hero pin at Nottwil is never off-screen — mirrors the offline SVG
+      // fallback's auto-fit, keeping the two map modes consistent.
+      const bs = useStore.getState().bridges
+      if (bs.length > 0) {
+        let minLng = Infinity
+        let maxLng = -Infinity
+        let minLat = Infinity
+        let maxLat = -Infinity
+        for (const b of bs) {
+          minLng = Math.min(minLng, b.lng)
+          maxLng = Math.max(maxLng, b.lng)
+          minLat = Math.min(minLat, b.lat)
+          maxLat = Math.max(maxLat, b.lat)
+        }
+        if (Number.isFinite(minLng)) {
+          map?.fitBounds(
+            [
+              [minLng, minLat],
+              [maxLng, maxLat],
+            ],
+            { padding: 36, duration: 0 },
+          )
+        }
+      }
     })
 
     const unsub = useStore.subscribe((state) => {

@@ -26,7 +26,7 @@ See [[India-Policy]] for details and [[Verified-Facts]] for what must NOT be quo
 ## Success criteria (demo-day)
 
 1. All 4 mandated components demonstrable live through the real pipeline ([[Four-Components]]).
-2. BHI drops 87 → 12 on a scripted damage beat, with uncertainty band, on screen.
+2. BHI drops 87 → 34 (RED, verified arc 87.1 → 77.7 → AMBER 54 → 33.6, [[Storyboard]]) on a scripted damage beat, with uncertainty band, on screen.
 3. Confusion matrix by Z24 scenario shown, not a single F1 ([[Metrics]]).
 4. 6-minute storyboard delivered with every source labeled ([[Storyboard]]).
 5. Team answers any judge question from the [[QandA-Prep]] bank without overclaiming.

@@ -1,8 +1,8 @@
 // Deterministic offline fixture generator — powers REPLAY mode when the live
 // WebSocket bridge is unreachable. Same payload shapes as the contract
 // (bridge/z24/accel, /bhi, /alert), so the whole demo runs with NO network.
-import { useStore, computeBhi, stateFor } from '../store'
-import type { AlertSource, Bridge, HealthState, Severity } from '../store'
+import { useStore, computeBhi, stateFor, F1_REF_HZ, WINDOW_S } from '../store'
+import type { AlertSource, Bridge, Severity } from '../store'
 import { spectrumMagnitudes } from './fft'
 
 export const FLEET_COUNT = 50
@@ -21,26 +21,61 @@ export function mulberry32(seed: number): () => number {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 const smooth = (x: number) => x * x * (3 - 2 * x)
 
+/** Z24 seeded-defect FEM trajectory (mirrors models/vibration/seeded_defect.py
+ * + models/vibration/stiffness.snapshot).  alpha -> [f1 Hz, seeded main-span EI
+ * loss %, model-inferred damage %].  Computed from the real continuous 3-span
+ * FEM with the Z24 campaign defects folded in (settlement reaches full severity
+ * at alpha ~0.33, cracking ~0.67, tendon rupture ~1.0).  The offline fixture
+ * samples this piecewise-linearly so its f1 / EI / damage numbers MATCH the
+ * live overlay instead of drifting to a different damage state. */
+const Z24_FEM: ReadonlyArray<readonly [number, number, number, number]> = [
+  [0.0, F1_REF_HZ, 0.0, 0.0],
+  [0.33, 3.778, 3.4, 0.0],
+  [0.5, 3.694, 7.4, 12.4],
+  [0.67, 3.608, 11.1, 21.7],
+  [0.85, 3.417, 17.7, 39.9],
+  [1.0, 3.244, 22.6, 53.9],
+]
+
+function femAt(e: number): { f1: number; eiLoss: number; damage: number } {
+  const x = clamp(e, 0, 1)
+  for (let i = 1; i < Z24_FEM.length; i++) {
+    const [a0, f0, s0, d0] = Z24_FEM[i - 1]
+    const [a1, f1, s1, d1] = Z24_FEM[i]
+    if (x <= a1) {
+      const t = (x - a0) / (a1 - a0)
+      return {
+        f1: f0 + (f1 - f0) * t,
+        eiLoss: s0 + (s1 - s0) * t,
+        damage: d0 + (d1 - d0) * t,
+      }
+    }
+  }
+  const [f, s, d] = Z24_FEM[Z24_FEM.length - 1]
+  return { f1: f, eiLoss: s, damage: d }
+}
+
 /** D2-12 offline mirror of the seeded-defect narrative (replay fixture).
- * The fixture's f1 drop (3.8 -> 3.5 Hz) is mapped onto the same Z24 staged
- * campaign the live backend evaluates with the FEM (settlement -> cracking ->
- * tendon rupture); EI loss follows the same f1 -> stiffness mapping. */
-function seededFixtureState(e: number, f1: number) {
+ * The fixture samples the SAME FEM trajectory the live backend evaluates
+ * (settlement -> cracking -> tendon rupture), so offline f1 / EI match the
+ * live overlay: full rupture reads f1 3.80 -> 3.24 Hz, main-span EI -22.6%. */
+function seededFixtureState(e: number) {
+  const { f1, eiLoss } = femAt(e)
   const label =
     e < 1e-6 ? 'none'
       : e < 0.34 ? 'pier settlement -> cracks'
         : e < 0.67 ? 'mid-span concrete cracking'
           : 'tendon rupture'
-  const eiLoss = Math.round((1 - (f1 / 3.8) ** 2) * 1000) / 10
+  const mainLoss = Math.round(eiLoss * 10) / 10
   return {
     active: [],
     label,
     source: e < 1e-6 ? '' : 'Z24 benchmark',
     f1: Math.round(f1 * 100) / 100,
-    f1Ref: 3.8,
-    f1DriftPct: Math.round((f1 / 3.8 - 1) * 10000) / 100,
-    eiLoss,
-    perSpanLossPct: [0, eiLoss, 0] as [number, number, number],
+    f1Ref: F1_REF_HZ,
+    f1DriftPct: Math.round((f1 / F1_REF_HZ - 1) * 10000) / 100,
+    eiLoss: mainLoss,
+    perSpanLossPct: [0, mainLoss, 0] as [number, number, number],
     note: 'offline replay fixture mirrors the live Z24 seeded-defect overlay',
   }
 }
@@ -127,9 +162,9 @@ export function generateFleet(): Bridge[] {
   })
   const hero: Bridge = {
     id: 'z24',
-    name: 'Z24 · Box Girder (Swiss reference)',
-    lat: 41.59,
-    lng: -90.5,
+    name: 'Z24 · Box Girder (Nottwil, CH — A1)',
+    lat: 47.135,
+    lng: 8.165,
     bhi: 82,
     state: 'GREEN',
   }
@@ -157,6 +192,9 @@ export function startReplay(): () => void {
   let tick = 0
   let damageClock = 0 // seconds into the current rupture episode
   let prevScenario: string = 'healthy'
+  // Damage envelope 0..1 shared by the accel waveform and the overlay, so the
+  // offline "measured" f1 and the seeded-defect f1 slide in lockstep.
+  const envelope = () => smooth(clamp(damageClock / 28, 0, 1))
 
   const pushAlert = (severity: Severity, source: AlertSource, text: string, recommendation?: string) => {
     useStore.getState().pushAlert({ severity, source, text, recommendation })
@@ -168,9 +206,10 @@ export function startReplay(): () => void {
     const ph1 = rand() * Math.PI * 2
     const ph2 = rand() * Math.PI * 2
     const ph3 = rand() * Math.PI * 2
-    // Z24 box-girder modes: healthy f1 = 3.8 Hz (f2 = 15.2); rupture drops f1
-    // toward ~3.5 Hz (mid-span stiffness loss) and adds broadband impact energy.
-    const f1 = rupture ? 3.5 : 3.8
+    // Z24 box-girder modes: healthy f1 = 3.8 Hz (f2 = 15.2); rupture slides f1
+    // along the seeded-defect FEM trajectory (full tendon rupture = 3.24 Hz,
+    // matching the live overlay) and adds broadband impact energy.
+    const f1 = rupture ? femAt(envelope()).f1 : F1_REF_HZ
     const f2 = 4 * f1
     const amps = rupture
       ? { a1: 0.1, a2: 0.14, a3: 0.3, noise: 0.06, impact: 0.35 }
@@ -209,7 +248,7 @@ export function startReplay(): () => void {
     }
     prevScenario = s.scenario
 
-    const e = smooth(clamp(damageClock / 28, 0, 1))
+    const e = envelope()
     const noise = (rand() - 0.5) * 0.02
     const cv = clamp(0.12 + (0.5 - 0.12) * e + noise, 0, 1)
     const vib = clamp(0.14 + (0.55 - 0.14) * e + noise, 0, 1)
@@ -218,20 +257,21 @@ export function startReplay(): () => void {
     const u = Math.round((1.5 + 6 * e + rand() * 0.5) * 100) / 100
     useStore.getState().setLive({ bhi, u, cv, vib, load, state: stateFor(bhi) })
 
-    // Keep the box-girder physics overlay honest offline: f1 drops with the
-    // damage clock, EI drift + inferred damage follow (mirrors the live overlay).
-    const f1 = rupture ? 3.8 - 0.28 * e : 3.8
+    // Keep the box-girder physics overlay honest offline: f1 slides along the
+    // SAME seeded-defect FEM trajectory the live backend evaluates, so the
+    // offline "measured" f1 matches the live overlay at every damage stage.
+    const f1 = rupture ? femAt(e).f1 : F1_REF_HZ
     useStore.getState().setStiffness({
       f1Meas: Math.round(f1 * 100) / 100,
-      f1Ref: 3.8,
-      eiDriftPct: Math.round((1 - (f1 / 3.8) ** 2) * 1000) / 10,
-      damagePct: Math.round(31 * e * 10) / 10,
+      f1Ref: F1_REF_HZ,
+      eiDriftPct: Math.round((1 - (f1 / F1_REF_HZ) ** 2) * 1000) / 10,
+      damagePct: Math.round(femAt(e).damage * 10) / 10,
       freqs: [Math.round(f1 * 100) / 100, 10.2],
       baselineLocked: true,
       stale: false,
     })
     // D2-12 seeded-defect narrative, offline mirror (label, EI loss, f1 slide).
-    useStore.getState().setSeededDefect(seededFixtureState(e, f1))
+    useStore.getState().setSeededDefect(seededFixtureState(e))
 
     // Scripted alert sequence during the rupture story arc.
     if (rupture && damageClock === 1) {
@@ -263,7 +303,7 @@ export function startReplay(): () => void {
         'Re-run weigh-in-motion calibration after structural verification.',
       )
     } else if (s.scenario === 'healthy' && tick % 22 === 0) {
-      pushAlert('info', 'cv', 'All channels nominal — no anomaly in the last 10.24 s window')
+      pushAlert('info', 'cv', `All channels nominal — no anomaly in the last ${WINDOW_S} s window`)
     }
     tick += 1
   }

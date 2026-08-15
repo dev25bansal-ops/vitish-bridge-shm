@@ -30,7 +30,7 @@ from typing import Any, Deque, Dict, Optional
 import numpy as np
 
 from app import contract
-from app.anomaly import get_anomaly
+from app.anomaly import get_anomaly, last_evidence
 from app.config import Settings
 from app.mqtt_client import Publisher, emit
 
@@ -47,7 +47,11 @@ class FusionService:
         self.cv = cfg.cv_default
         self.load = cfg.load_default
         self.vib = cfg.vib_base
-        self.u = 0.05
+        # ROADMAP line 68: floor vs trained-push split of the last scored window,
+        # surfaced in the BHI message so the UI credits whichever detector is
+        # actually carrying the arc.
+        self.vib_evidence = {"floor": 0.0, "trained_push": 0.0, "score": 0.0}
+        self.u = contract.uncertainty_points(0.05)  # ±BHI points (initial ~0.5)
         self.state = "GREEN"
         self.bhi = contract.compute_bhi(self.cv, self.vib, self.load)
         self.last_ts: Optional[float] = None
@@ -99,21 +103,30 @@ class FusionService:
 
     # -- accel path ----------------------------------------------------------------
     def on_accel(self, topic: str, payload: Any) -> None:
-        if not isinstance(payload, dict) or not payload.get("samples"):
+        if not isinstance(payload, dict):
+            return
+        samples = payload.get("samples")
+        # item 11 (ROADMAP-NEXT): a truthy non-numeric payload (e.g. a string)
+        # would extend the ring with garbage — require an actual list of numbers.
+        if not isinstance(samples, (list, tuple)) or len(samples) == 0:
             return
         node = payload.get("node")
         with self._lock:
             ring = self._rings.setdefault(
                 int(node), deque(maxlen=self.cfg.window_n))
-            ring.extend(payload["samples"])
+            ring.extend(float(x) for x in samples)
             if len(ring) >= self.cfg.window_n:
                 score, unc = get_anomaly(list(ring))
+                self.vib_evidence = last_evidence()  # ROADMAP line 68
                 self._node_scores[int(node)] = score
                 target = self.cfg.vib_base + score * (1.0 - self.cfg.vib_base)
                 self.vib = 0.6 * self.vib + 0.4 * target
                 scores = list(self._node_scores.values())
                 spread = float(np.std(scores)) if scores else 0.0
-                self.u = round(min(0.40, 0.03 + 0.30 * self.vib + 0.40 * spread), 3)
+                # normalized [0, 0.4] evidence uncertainty -> ±BHI points at
+                # publish (ROADMAP line 45: u semantic is points, not fraction)
+                self.u = contract.uncertainty_points(
+                    round(min(0.40, 0.03 + 0.30 * self.vib + 0.40 * spread), 3))
 
             now = time.monotonic()
             candidate = contract.state_for(contract.compute_bhi(self.cv, self.vib, self.load))
@@ -138,6 +151,7 @@ class FusionService:
             "vib": round(self.vib, 3),
             "load": round(self.load, 3),
             "state": self.state,
+            "vib_evidence": dict(self.vib_evidence),  # ROADMAP line 68
             "msg_id": f"fus-{int(time.monotonic() * 1000)}",
         }
         topic = contract.TOPIC_BHI.format(bridge=self.cfg.bridge_id)

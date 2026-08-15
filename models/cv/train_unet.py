@@ -1,6 +1,12 @@
 """
 cv/train_unet.py — train a compact U-Net crack segmenter (dense BCE+Dice).
 
+EXPERIMENTAL (ROADMAP line 65): the demo DOES NOT load crack_unet.pt anywhere —
+the production cv path is YOLO-seg (cv_feed -> CrackDetector -> crack_seg.pt).
+This script is kept as an experiment to explore dense segmentation of hairline
+cracks, which the YOLO-seg head structurally cannot represent.  Any weight it
+produces is an experimental artifact, not part of the demo pipeline.
+
     python models/cv/train_unet.py [--epochs 50] [--imgsz 256] [--batch 32]
 
 WHY a U-Net (not YOLO-seg): crack-seg experiments on CrackSeg9k showed the
@@ -12,7 +18,8 @@ YOLO-seg path is structurally capped for hairline cracks —
 A dense U-Net predicts a per-pixel crack probability, so thin cracks are not
 quantized into polygons, and the negatives (clean concrete, empty masks) train
 the "no crack" class directly. Output is a real crack-area fraction — an
-honest, measured signal for the BHI cv sub-index.
+honest, measured signal for the BHI cv sub-index (unrealized: nothing reads
+the weight today).
 
 Data: yolo9k_sub2 (2,062 cracked + 907 clean-negative crops, 100% CC0).
 Each label is rasterized back to a 400x400 mask, then the image+mask pair is
@@ -33,6 +40,7 @@ import sys
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 import torch.nn as nn
@@ -119,7 +127,6 @@ def _rasterize(label_txt: Path, h: int = 400, w: int = 400) -> np.ndarray:
         xy = np.array([float(v) for v in parts[1:]]).reshape(-1, 2)
         xy[:, 0] *= w
         xy[:, 1] *= h
-        import cv2
         cv2.fillPoly(m, [xy.astype(np.int32)], 1)
     return m
 
@@ -134,7 +141,6 @@ class CrackDataset(Dataset):
     """
 
     def __init__(self, split: str, imgsz: int, train: bool) -> None:
-        import cv2
         self.imgsz = imgsz
         self.train = train
         img_dir = DATA / "images" / split
@@ -165,8 +171,7 @@ class CrackDataset(Dataset):
             if self.rng.random() < 0.5:
                 img = img[::-1]; m = m[::-1]
             k = self.rng.choice([1, 2, 3])
-            if k != 4:
-                img = np.rot90(img, k); m = np.rot90(m, k)
+            img = np.rot90(img, k); m = np.rot90(m, k)  # k in {1,2,3} (never 0/4)
             # light color jitter (thin-crack-safe)
             if self.rng.random() < 0.5:
                 f = self.rng.uniform(0.85, 1.15)
@@ -242,6 +247,21 @@ def main(argv: list[str] | None = None) -> int:
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device={device}  imgsz={args.imgsz}  batch={args.batch}  "
           f"epochs={args.epochs}")
+
+    # ROADMAP line 65: RAM guard — CrackDataset preloads every image+mask into
+    # RAM (2 * imgsz^2 bytes each, ~3,000 images).  256 -> ~0.9 GiB; 512 ->
+    # ~3.7 GiB; 1024 -> ~14.8 GiB.  Refuse the sizes that pagefile-thrash and
+    # warn above the recommended default.
+    if args.imgsz > 512:
+        print(f"ERROR: --imgsz {args.imgsz} would preload ~"
+              f"{2 * args.imgsz * args.imgsz * 3000 / 2**30:.1f} GiB of RAM "
+              "(2*imgsz^2 bytes x ~3,000 images) — refusing; use <= 512.",
+              file=sys.stderr)
+        return 1
+    if args.imgsz > 256:
+        print(f"WARNING: imgsz={args.imgsz} preloads ~"
+              f"{2 * args.imgsz * args.imgsz * 3000 / 2**30:.1f} GiB RAM; "
+              "256 (default) is ~0.9 GiB and recommended on this laptop.")
 
     train_ds = CrackDataset("train", args.imgsz, train=True)
     val_ds = CrackDataset("val", args.imgsz, train=False)

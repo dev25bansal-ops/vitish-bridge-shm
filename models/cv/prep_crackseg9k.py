@@ -10,7 +10,7 @@ Reads  data/cv/crackseg9k/{train,test}.parquet
   * head  column  = 480x480 grayscale auxiliary image (ignored for training)
 
 Writes data/cv/yolo9k/:
-  images/train|val/{idx}.jpg   images/train|val/{idx}.png
+  images/train|val/{idx}.jpg
   labels/train|val/{idx}.txt   YOLO-seg polygon labels (class 0 'crack')
   data.yaml                    pointing at the split above
 
@@ -19,7 +19,7 @@ The dataset's own split is kept: train.parquet (7,332) -> train, test.parquet
 
 Mask binarization: masks are soft-edged (anti-aliased grayscale); we threshold at
 127 (half-intensity) to recover the core crack footprint, then find outer
-contours, simplify with approxPolyDP, drop noise contours (< 40 px), and cap at
+contours, simplify with approxPolyDP, drop noise contours (< 15 px), and cap at
 a sane number of polygon points per contour (ultralytics label limit).
 """
 from __future__ import annotations
@@ -70,7 +70,7 @@ def mask_to_polygons(mask_bin: np.ndarray) -> list[np.ndarray]:
     return polys
 
 
-def row_to_yolo(r: dict, h: int, w: int) -> tuple[np.ndarray, list[np.ndarray]] | None:
+def row_to_yolo(r: dict) -> tuple[np.ndarray, list[np.ndarray]] | None:
     img = decode_b64(r["image"])
     mask_bin = cv2.imdecode(np.frombuffer(base64.b64decode(r["mask"]), np.uint8),
                             cv2.IMREAD_GRAYSCALE)
@@ -82,6 +82,9 @@ def row_to_yolo(r: dict, h: int, w: int) -> tuple[np.ndarray, list[np.ndarray]] 
     polys = mask_to_polygons(mask_bin)
     if not polys:
         return None
+    # ROADMAP line 66: normalize against the MASK's own size (ih, iw) — the
+    # dead h/w params claimed the image is always 400x400, but the mask is the
+    # authority for its own polygon coordinates.
     ih, iw = mask_bin.shape[:2]
     norm = []
     for p in polys:
@@ -119,7 +122,7 @@ def convert(split_name: str, parquet_name: str, out_sub: str) -> tuple[int, int]
     idx = 0
     for table in batch:
         for rec in table.to_pylist():
-            res = row_to_yolo(rec, 400, 400)
+            res = row_to_yolo(rec)
             if res is None:
                 skipped += 1
                 idx += 1

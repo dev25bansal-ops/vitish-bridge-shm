@@ -12,6 +12,7 @@ Message flow (replay-first, live-second):
 """
 from __future__ import annotations
 
+import math
 import time
 from typing import Any, Literal
 
@@ -30,8 +31,6 @@ TOPIC_BHI = "bridge/{bridge}/bhi"
 TOPIC_ALERT = "bridge/{bridge}/alert"
 # Node online/offline heartbeat + metadata
 TOPIC_STATUS = "bridge/{bridge}/status"
-# Simulated LoRa backhaul label (production backhaul; demo streams over MQTT/WiFi)
-TOPIC_LORA = "bridge/{bridge}/rf"
 
 # QoS: telemetry = 1, alarms = 2 (picked ONE scheme; do not mix in the demo)
 QOS_TELEMETRY = 1
@@ -76,7 +75,6 @@ ACCEL_SAMPLES = 100
 FS_ACCEL = 100                 # Hz (matches Z24 benchmark)
 WINDOW_S = 10.24               # inference window length in seconds
 WINDOW_N = int(FS_ACCEL * WINDOW_S)   # 1024 samples per anomaly inference
-ANOMALY_LATENCY_S = WINDOW_S + 0.5    # window + inference overhead (honest claim)
 
 # ---------------------------------------------------------------------------
 # BHI — transparent, auditable 3-sub-index fusion.
@@ -99,6 +97,26 @@ def state_for(bhi: float) -> HealthState:
     if bhi >= BHI_AMBER:
         return "AMBER"
     return "RED"
+
+
+# ---------------------------------------------------------------------------
+# u (uncertainty) semantic — ABSOLUTE BHI POINTS on the 0-100 scale.
+# The contract payload example is `"u": 3.1` (BHI ± 3.1 points); the twin draws
+# ±u as a band directly on the BHI gauge (twin/src/panels/HealthPanel.tsx), so
+# every component MUST publish points, never a normalized fraction.
+#
+# Fusion internally computes a normalized evidence uncertainty in [0.03, 0.40]
+# (fusion.py) and converts to points at publish via ×10 — a 0.10 evidence
+# uncertainty ≈ ±1 BHI point. That lands ~0.7 points (healthy, single-mode) up
+# to ~4 points (damage + cross-node spread), matching the default/regulator
+# band of ±3.0 points (ROADMAP line 45).
+# ---------------------------------------------------------------------------
+U_POINTS_PER_FRACTION = 10.0
+
+
+def uncertainty_points(u_frac: float) -> float:
+    """Convert a normalized [0, 0.4] fused uncertainty to ±BHI points."""
+    return round(float(u_frac) * U_POINTS_PER_FRACTION, 1)
 
 
 def compute_bhi(
@@ -136,6 +154,9 @@ Z24_SIM_NODES = [6, 7, 8]      # channels we publish (index into axis 1)
 # 17 progressive-damage scenarios (labels) of the Z24 benchmark.
 # NOTE: identify the healthy reference classes (0 and ~6) before training —
 # the anomaly detector is trained on healthy windows only.
+# Registry only (ROADMAP line 92): the dict itself is not read at runtime — its
+# purpose is the Z24_HEALTHY_LABELS / Z24_DAMAGE_LABELS derivation below (both
+# consumed by the simulator) plus documenting the class semantics.
 Z24_SCENARIOS = {
     0: "healthy",
     1: "healthy (reference)",
@@ -161,10 +182,45 @@ Z24_DAMAGE_LABELS = [l for l in Z24_SCENARIOS if l not in Z24_HEALTHY_LABELS]
 # ---------------------------------------------------------------------------
 # Validation helper
 # ---------------------------------------------------------------------------
-def validate_accel(payload: dict[str, Any]) -> list[str]:
+# Public-broker demo adapter (backend/app/live_feed.py): the MSU feed only
+# publishes RMS scalars, never a raw waveform, so its accel row is deliberately
+# THIN (fs=0, samples=[]).  validate_accel is parameterised by bridge so the
+# hero contract stays strict while the live-demo row is validated against its
+# own (thin, honest) expectations (ROADMAP line 37).
+LIVE_DEMO_BRIDGE = "live-demo"
+
+
+def validate_accel(payload: dict[str, Any], bridge: str = BRIDGE_ID) -> list[str]:
+    """Validate an accel row against the frozen contract; empty list = valid.
+
+    `bridge` selects the expectation set:
+      * 'z24' (hero, default): the full contract row — fs=100 and exactly
+        ``ACCEL_SAMPLES`` raw samples (simulator / Z24 replay emit this).
+      * 'live-demo': the public-broker adapter emits a deliberately thin row —
+        fs=0, samples=[] because that feed has no waveform, only RMS.  Validated
+        fields: bridge id, fs/samples thin-ness, rms finite, flag in {0,1}.
+    """
     errors = []
-    if payload.get("bridge") != BRIDGE_ID:
-        errors.append(f"bridge must be '{BRIDGE_ID}'")
+    if bridge == LIVE_DEMO_BRIDGE:
+        if payload.get("bridge") != LIVE_DEMO_BRIDGE:
+            errors.append(f"bridge must be '{LIVE_DEMO_BRIDGE}'")
+        if payload.get("fs") != 0 or payload.get("samples") != []:
+            errors.append("live-demo accel row is thin: fs=0, samples=[] (RMS-only feed)")
+        rms = payload.get("rms")
+        try:
+            rms_f = float(rms)
+            finite = math.isfinite(rms_f)
+        except (TypeError, ValueError):
+            finite = False
+        if isinstance(rms, bool) or not finite:
+            errors.append("live-demo rms must be a finite number")
+        if payload.get("flag") not in (0, 1):
+            errors.append("flag must be 0 or 1")
+        return errors
+
+    # hero / full contract row
+    if payload.get("bridge") != bridge:
+        errors.append(f"bridge must be '{bridge}'")
     if payload.get("fs") != FS_ACCEL:
         errors.append(f"fs must be {FS_ACCEL}")
     samples = payload.get("samples")

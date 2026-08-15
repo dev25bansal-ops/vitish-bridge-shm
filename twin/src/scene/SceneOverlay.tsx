@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { useStore } from '../store'
+import { DAMAGE_SAT_PCT } from './collapse'
 
 /**
  * D2-9 scene overlay — honest captions layered over the 3D view:
@@ -23,7 +24,7 @@ export const SceneOverlay = memo(function SceneOverlay() {
           <span>0%</span>
           <span>10%</span>
           <span>20%</span>
-          <span>35%+</span>
+          <span>{DAMAGE_SAT_PCT}%+</span>
         </div>
         <div className="scene-legend-note">model-inferred · heat tint on deck segments</div>
       </div>

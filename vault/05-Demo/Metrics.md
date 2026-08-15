@@ -39,7 +39,20 @@ Never print: $560, $300, $5–15/mo, $10–50/mo.
 
 ## Demo beat numbers
 
-- BHI 87 → **12** on the scripted damage cascade ([[Digital-Twin]]).
+- BHI 87 → **34** (RED, verified arc 87.1 → 77.7 → AMBER 54 → 33.6, [[Storyboard]]) on the scripted damage cascade.
 - **N days** before final rupture — measured from actual threshold crossing (≈30 settlement, ≈15 spalling), labeled on screen.
 
 Related: [[Storyboard]] · [[CV-Model]] · [[Vibration-Model]] · [[BHI-Formula]]
+
+## Measured — 2026-08-15 (`scripts/metrics_sheet.py`)
+
+- **Demo scenarios**: precision 1.0 · recall 1.0 · F1 1.0 (healthy mean 0.0737 vs rupture mean 0.4771, threshold mean+3σ = 0.1914).
+- **Z24 benchmark**: precision 0.5263 · recall 0.0016 · F1 0.0032 — honest current state; the synthetic-tuned floor does not separate real Z24 scenarios, the VAE/OCSVM ensemble is inert (Q&A Q3/Q7).
+- **crack_seg val**: mAP@0.5 0.0826 (full PR curve; cross-check ultralytics val 0.074) · @0.25 precision 0.4256 · recall 0.057 · image-level recall 0.9747 (500/513).
+
+---
+
+
+
+
+

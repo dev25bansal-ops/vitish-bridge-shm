@@ -86,6 +86,15 @@ class AnomalyDetector:
         self._envelope_margin = 0.05     # dead-band so healthy jitter never pushes
         self.trained_push = 0.85         # strength of the trained-model push
 
+        # Honesty relabel (ROADMAP line 40): the shipped scaler.pkl has a
+        # near-zero-variance feature, so StandardScaler standardization explodes
+        # and the VAE/OCSVM scores saturate identically for healthy AND damaged
+        # (measured raw 0.9743 / 0.9743 -> dev = push = 0.0).  When detected, the
+        # trained ensemble is declared INERT (never scored) rather than pretending
+        # it detects — the deterministic spectral floor owns the arc.  A retrain
+        # with a non-degenerate scaler (ROADMAP line 117) flips this flag off.
+        self._scaler_degenerate = False
+
         # heuristic fallback baseline (always maintained so it can serve/blend)
         self._heuristic = HeuristicAnomalyScorer(fs=self.fs)
 
@@ -120,6 +129,7 @@ class AnomalyDetector:
             # SECURITY NOTE: vae.pt / lstm_ae.pt are torch.checkpoint dicts written
             # ONLY by this repo's own training scripts (tensors + simple scalars),
             # so weights_only=True is safe and blocks arbitrary pickle execution.
+            parts: list[str] = []
             if vae_path.exists() and ocsvm_path.exists():
                 try:
                     ckpt = torch.load(vae_path, map_location="cpu", weights_only=True)
@@ -127,9 +137,9 @@ class AnomalyDetector:
                     if self._scaler is None and scaler_path.exists():
                         self._scaler = _load_pickle(scaler_path)
                     self._ocsvm = _load_pickle(ocsvm_path)
-                    self._mode_note = (f"VAE/OCSVM (vae.pt, mode={ckpt.get('mode')}, "
-                                       f"latent={ckpt.get('latent_dim')})")
-                    self._mode_note += " · envelope-floor+push"
+                    self._scaler_degenerate = self._detect_degenerate_scaler()
+                    parts.append(f"VAE/OCSVM (vae.pt, mode={ckpt.get('mode')}, "
+                                 f"latent={ckpt.get('latent_dim')})")
                 except Exception as exc:
                     print(f"  [infer] WARNING: failed to load VAE/OCSVM artifacts ({exc}); "
                           "using heuristic fallback.")
@@ -138,10 +148,26 @@ class AnomalyDetector:
                 try:
                     ckpt = torch.load(lstm_path, map_location="cpu", weights_only=True)
                     self._lstm_cfg = ckpt
-                    self._mode_note += " + LSTM-AE" if "VAE" in self._mode_note else "LSTM-AE"
+                    parts.append("LSTM-AE")
                 except Exception as exc:
                     print(f"  [infer] WARNING: failed to load LSTM-AE artifact ({exc}).")
-            print(f"  [infer] mode: {self._mode_note}  (device={self._device})")
+
+            if parts:
+                self._mode_note = " + ".join(parts)
+                if self._scaler_degenerate:
+                    # Honesty relabel (ROADMAP line 40): do NOT claim the ensemble
+                    # detects when its shipped scaler makes it measure as inert.
+                    self._mode_note += (" · EXPERIMENTAL — INERT (shipped scaler.pkl has "
+                                        "a near-zero-variance feature; contributes no "
+                                        "separation; the deterministic spectral floor "
+                                        "carries the arc)")
+                else:
+                    self._mode_note += " · envelope-floor+push"
+                print(f"  [infer] mode: {self._mode_note}  (device={self._device})")
+                if self._scaler_degenerate:
+                    print("  [infer] WARNING: shipped scaler.pkl is degenerate; trained "
+                          "ensemble declared INERT — the spectral floor owns the arc. "
+                          "Retrain with a non-degenerate scaler (ROADMAP line 117).")
 
     @property
     def mode(self) -> str:
@@ -150,6 +176,22 @@ class AnomalyDetector:
     @property
     def has_trained_models(self) -> bool:
         return (self._ocsvm is not None) or (self._lstm_cfg.get("state_dict") is not None)
+
+    def _detect_degenerate_scaler(self) -> bool:
+        """True when the loaded StandardScaler has a near-zero-variance feature.
+
+        A scale ~0 feature (measured: min scale_ = 1.4e-8 on the shipped
+        scaler.pkl) makes standardized values explode to ~1e4-1e8, so the
+        VAE/OCSVM scores saturate identically for healthy AND damaged windows
+        (measured raw 0.9743 / 0.9743 -> dev = push = 0.0) and the trained
+        ensemble contributes ZERO separation.  The honest response is to treat
+        the ensemble as inert rather than pretend it detects (ROADMAP line 40).
+        """
+        try:
+            scale = np.asarray(self._scaler.scale_, dtype=np.float64).ravel()
+            return bool(np.any(scale < 1e-6))
+        except Exception:
+            return False
 
     # ------------------------------------------------------------- window prep
     def _prep(self, window: np.ndarray) -> np.ndarray:
@@ -166,7 +208,15 @@ class AnomalyDetector:
 
     # ----------------------------------------------------------- baseline feed
     def _trained_raw(self, window: np.ndarray) -> tuple[float, float]:
-        """Mean raw trained score + uncertainty across enabled trained components."""
+        """Mean raw trained score + uncertainty across enabled trained components.
+
+        Returns (0.0, 1.0) when the ensemble is inert (degenerate shipped scaler)
+        so an uninformative model contributes no fake evidence — the honest
+        relabeled state (ROADMAP line 40): artifacts are loaded and labelled
+        EXPERIMENTAL, but they do not score.
+        """
+        if self._scaler_degenerate:
+            return 0.0, 1.0
         scores: list[float] = []
         uncs: list[float] = []
         if self._ocsvm is not None:
@@ -248,10 +298,12 @@ class AnomalyDetector:
 
         Returns a float in [0, 1] = how far the trained ensemble's raw score
         departs above this bridge's OWN healthy envelope (high-water mark seen
-        during warm-up). Returns 0.0 during warm-up or when no trained model is
-        loaded, so an uninformative model can never create a false alarm. The
-        deterministic spectral floor (owned by backend/app/anomaly.py) is always
-        the base; this only adds honest trained evidence on top.
+        during warm-up). Returns 0.0 during warm-up, when no trained model is
+        loaded, or when the shipped scaler is degenerate (the ensemble is
+        declared INERT — ROADMAP line 40), so an uninformative model can never
+        create a false alarm. The deterministic spectral floor (owned by
+        backend/app/anomaly.py) is always the base; this only adds honest
+        trained evidence on top.
         """
         w = self._prep(window)
         with self._lock:
@@ -279,6 +331,8 @@ class AnomalyDetector:
 
     def _score_vae_ocsvm(self, window: np.ndarray) -> tuple[float, float]:
         import torch
+        if self._scaler_degenerate:  # inert ensemble must not score (ROADMAP line 40)
+            return 0.0, 1.0
         cfg = self._vae_cfg
         x = self._vae_input(window)
         if self._scaler is not None:

@@ -5,8 +5,10 @@
 // projection fans out from there.  Honest offline default when unreachable.
 import { useStore } from '../store'
 import type { DeteriorationRow } from '../store'
+import { fixtureDeterioration, fixtureReady } from './deteriorationFixture'
+import { warnOnce } from './warnOnce'
+import { apiBase } from './config'
 
-const DET_URL = 'http://127.0.0.1:8000/api/bridge/z24/deterioration?years=30&rating=super'
 const POLL_MS = 5000
 
 let timer: ReturnType<typeof setInterval> | null = null
@@ -30,7 +32,7 @@ function mapRows(raw: unknown): DeteriorationRow[] {
 
 async function poll(): Promise<void> {
   try {
-    const res = await fetch(DET_URL)
+    const res = await fetch(`${apiBase()}/api/bridge/z24/deterioration?years=30&rating=super`)
     if (!res.ok) return
     const d = (await res.json()) as Record<string, unknown>
     if (!Array.isArray(d.projection)) return
@@ -46,13 +48,29 @@ async function poll(): Promise<void> {
       projection: mapRows(d.projection),
       rating: typeof d.rating === 'string' ? (d.rating as string) : 'super',
     })
+    return
   } catch {
-    // backend unreachable — honest offline default stays in effect
+    // backend unreachable — fall through to the offline fixture
+    warnOnce('deterioration', 'GET /api/bridge/z24/deterioration failed — using offline Markov fixture')
+  }
+  // Offline mirror (line 74): re-anchor the fixture to the live BHI so the
+  // Markov curve still paints and tracks the story while the backend is down.
+  // The LIVE payload always wins — the return above overwrites this fixture on
+  // the first successful poll.  Honest labels live in deteriorationFixture.ts.
+  const bhi = useStore.getState().live.bhi
+  if (fixtureReady(bhi)) {
+    useStore.getState().setDeterioration(fixtureDeterioration(bhi))
   }
 }
 
 export function startDeteriorationPolling(): void {
   if (timer !== null) return
+  // Seed the offline fixture immediately so the panel is never empty on an
+  // offline start (backend may stay unreachable for the whole offline replay).
+  const bhi = useStore.getState().live.bhi
+  if (fixtureReady(bhi)) {
+    useStore.getState().setDeterioration(fixtureDeterioration(bhi))
+  }
   poll()
   timer = setInterval(poll, POLL_MS)
 }

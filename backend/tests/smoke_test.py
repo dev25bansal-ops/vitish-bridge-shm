@@ -55,6 +55,21 @@ def check(name, cond, extra=""):
         print(f"  [FAIL] {name} {extra}")
 
 
+def wait_for(pred, timeout=5.0, step=0.02):
+    """Poll `pred` until it is true or `timeout` elapses (event-based wait).
+
+    Replaces fixed `time.sleep(...)` windows that race on slow machines: a slow
+    CI box makes a 0.2 s sleep flaky while a fast one wastes 0.2 s.  Returns the
+    final predicate value (call it once more so the truth is not stale).
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if pred():
+            return True
+        time.sleep(step)
+    return bool(pred())
+
+
 # ---------------------------------------------------------------------------
 # fakes
 # ---------------------------------------------------------------------------
@@ -203,14 +218,15 @@ def test_simulator():
     check("data source synthetic", sim.data_source == "synthetic")
     t = threading.Thread(target=sim.run, daemon=True)
     t.start()
-    time.sleep(0.25)
+    # event-based wait (line 59): wait until the sim actually publishes rather
+    # than sleeping a fixed window that races on slow CI
+    check("simulator published accel", wait_for(lambda: len(pub.accel) > 0))
     # control the injector through the bus WHILE the sim is running
     bus.publish("control/cmd", {"cmd": "scenario", "scenario": "rupture"})
-    time.sleep(0.1)
-    check("control/cmd switches scenario", sim.injector.scenario == "rupture")
+    check("control/cmd switches scenario",
+          wait_for(lambda: sim.injector.scenario == "rupture"))
     sim.stop()
     t.join(timeout=3.0)
-    check("simulator published accel", len(pub.accel) > 0)
     if pub.accel:
         p = pub.accel[0]
         errors = contract.validate_accel(p)
@@ -254,26 +270,29 @@ def test_bus():
 def test_store():
     print("[6] memory store + JSON persistence")
     import tempfile
-    tmp = Path(tempfile.mkdtemp()) / "state_cache.json"
-    st = db.MemoryStore(cache_path=tmp)
-    st.insert_accel(node=7, ts=1.0, rms=0.05, flag=0)
-    st.insert_accel(node=8, ts=1.1, rms=0.06, flag=0)
-    st.insert_bhi(ts=1.0, bhi=87.0, u=3.0, cv=0.1, vib=0.12, load=0.19, state="GREEN")
-    st.insert_alert(ts=1.0, severity="critical", source="fusion", text="x", recommendation="y")
-    st.close()
+    # line 59: TemporaryDirectory auto-cleans the cache dir (previously a bare
+    # mkdtemp leaked a temp dir on every run)
+    with tempfile.TemporaryDirectory(prefix="vitish-smoke-") as td:
+        tmp = Path(td) / "state_cache.json"
+        st = db.MemoryStore(cache_path=tmp)
+        st.insert_accel(node=7, ts=1.0, rms=0.05, flag=0)
+        st.insert_accel(node=8, ts=1.1, rms=0.06, flag=0)
+        st.insert_bhi(ts=1.0, bhi=87.0, u=3.0, cv=0.1, vib=0.12, load=0.19, state="GREEN")
+        st.insert_alert(ts=1.0, severity="critical", source="fusion", text="x", recommendation="y")
+        st.close()
 
-    st2 = db.MemoryStore(cache_path=tmp)  # reload
-    rms = st2.recent_rms("z24", 10)
-    bhi = st2.recent_bhi("z24", 10)
-    al = st2.recent_alerts("z24", 10)
-    check("rms persisted+reloaded", len(rms) == 2 and rms[0]["rms"] == 0.05)
-    check("bhi persisted+reloaded", len(bhi) == 1 and bhi[0]["bhi"] == 87.0)
-    check("alerts persisted+reloaded", len(al) == 1 and al[0]["text"] == "x")
-    cs = st2.current_state("z24")
-    check("current_state bhi", cs["bhi"] == 87.0)
-    check("current_state nodes", "7" in cs["nodes"] and "8" in cs["nodes"])
-    check("current_state source", cs["source"] == "memory")
-    st2.close()
+        st2 = db.MemoryStore(cache_path=tmp)  # reload
+        rms = st2.recent_rms("z24", 10)
+        bhi = st2.recent_bhi("z24", 10)
+        al = st2.recent_alerts("z24", 10)
+        check("rms persisted+reloaded", len(rms) == 2 and rms[0]["rms"] == 0.05)
+        check("bhi persisted+reloaded", len(bhi) == 1 and bhi[0]["bhi"] == 87.0)
+        check("alerts persisted+reloaded", len(al) == 1 and al[0]["text"] == "x")
+        cs = st2.current_state("z24")
+        check("current_state bhi", cs["bhi"] == 87.0)
+        check("current_state nodes", "7" in cs["nodes"] and "8" in cs["nodes"])
+        check("current_state source", cs["source"] == "memory")
+        st2.close()
 
 
 # ---------------------------------------------------------------------------
@@ -296,14 +315,18 @@ def test_fusion():
                 "samples": [float(x) for x in w], "fs": 100,
             })
         hp.tick()
-    time.sleep(0.2)
-    check("fusion emits BHI ~1/s", len(pub.bhi) >= 1)
+    # event-based waits (line 59) — fusion emits BHI on its own 1/s cadence and
+    # scores vib asynchronously; poll instead of sleeping a fixed window
+    check("fusion emits BHI ~1/s", wait_for(lambda: len(pub.bhi) >= 1))
     if pub.bhi:
         p = pub.bhi[-1]
         check("BHI in healthy range 80-95", 80 <= p["bhi"] <= 95, str(p))
         check("BHI state GREEN", p["state"] == "GREEN")
         check("BHI payload contract keys", all(k in p for k in
               ("bridge", "ts", "bhi", "u", "cv", "vib", "load", "state")))
+        # ROADMAP line 45: u is ABSOLUTE BHI POINTS (~0.5-4.0), never a fraction
+        # [0.03,0.40] — the twin renders ±u directly on the 0-100 BHI gauge.
+        check("u in points scale (not fraction)", 0.5 <= p["u"] <= 4.0, str(p["u"]))
     # escalate evidence + scenario
     bus.publish("control/cmd", {"cmd": "cv", "value": 0.55})
     bus.publish("control/cmd", {"cmd": "load", "value": 0.40})
@@ -319,11 +342,12 @@ def test_fusion():
         rp.tick()
     # BHI publishes at most once per second (contract cadence); the burst feed
     # finished inside the throttle window, so drive one publish to assert the
-    # fused outcome for the current internal state.
-    time.sleep(0.3)
+    # fused outcome for the current internal state.  cv/load update synchronously
+    # on the control/cmd handler; vib rises asynchronously once the rupture
+    # windows have been scored — wait on the actual state, not a fixed sleep.
     check("fusion cv updated", fus.cv == 0.55, str(fus.cv))
     check("fusion load updated", fus.load == 0.40, str(fus.load))
-    check("fusion vib rises with rupture", fus.vib > 0.3, str(fus.vib))
+    check("fusion vib rises with rupture", wait_for(lambda: fus.vib > 0.3), str(fus.vib))
     fus.publish_bhi()
     last = pub.bhi[-1]
     check("fusion BHI drops on damage", last["bhi"] < 65, str(last))
@@ -355,17 +379,31 @@ def test_emit():
 # ---------------------------------------------------------------------------
 # 9. WS bridge broadcast
 # ---------------------------------------------------------------------------
+def _free_port() -> int:
+    """Pick a port that is free right now (best-effort; WSBridge also walks
+    upward if another process grabs it before bind)."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 def test_ws():
     print("[9] WebSocket bridge broadcast")
     bus = events.get_bus()
-    tcfg = Settings(ws_port=8976)
+    # line 59: parameterised ephemeral port (was a hardcoded 8976 that could
+    # collide with a parallel run / another dev process)
+    tcfg = Settings(ws_port=_free_port())
     ws = WSBridge(tcfg, bus)
     ws.start()
-    time.sleep(0.3)
+    # event-based wait: the server binds in its own thread — poll bound_port
+    # (set after the actual bind, possibly walked upward) instead of sleeping
+    check("ws server bound", wait_for(lambda: ws.bound_port is not None))
+    port = ws.bound_port
 
     async def run():
         import websockets
-        async with websockets.connect("ws://127.0.0.1:8976") as c:
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as c:
             hello = json.loads(await c.recv())
             assert hello["topic"] == "hello", hello
             # bridge replays the current storyboard scenario on connect
@@ -376,7 +414,13 @@ def test_ws():
             msg = json.loads(await asyncio.wait_for(c.recv(), timeout=3.0))
             return hello, snap, msg
 
-    hello, snap, msg = asyncio.new_event_loop().run_until_complete(run())
+    # line 59: close the asyncio loop we create (new_event_loop leaks the loop
+    # + its selector/poller on every run)
+    loop = asyncio.new_event_loop()
+    try:
+        hello, snap, msg = loop.run_until_complete(run())
+    finally:
+        loop.close()
     check("ws hello", hello.get("topic") == "hello")
     check("ws scenario snapshot on connect",
           snap.get("cmd") == "scenario" and snap.get("scenario") == "healthy")
@@ -388,12 +432,16 @@ def test_ws():
 
     async def run2():
         import websockets
-        async with websockets.connect("ws://127.0.0.1:8976") as c:
+        async with websockets.connect(f"ws://127.0.0.1:{port}") as c:
             await c.recv()  # hello
             snap2 = json.loads(await c.recv())
             return snap2
 
-    snap2 = asyncio.new_event_loop().run_until_complete(run2())
+    loop2 = asyncio.new_event_loop()
+    try:
+        snap2 = loop2.run_until_complete(run2())
+    finally:
+        loop2.close()
     check("ws scenario catch-up after change",
           snap2.get("cmd") == "scenario" and snap2.get("scenario") == "rupture")
     ws.stop()
@@ -406,55 +454,76 @@ def test_api():
     print("[10] FastAPI surface (TestClient)")
     db.reset_store()
     db.get_store(settings, prefer="memory")  # cache a memory store, no PG attempt
-    from fastapi.testclient import TestClient
-    import app.api as api_mod
-    app = api_mod.create_app()
-    client = TestClient(app)
+    try:
+        from fastapi.testclient import TestClient
+        import app.api as api_mod
+        app = api_mod.create_app()
+        client = TestClient(app)
 
-    r = client.get("/health")
-    check("GET /health 200", r.status_code == 200)
-    hb = r.json()
-    check("health broker reachable flag", "reachable" in hb["broker"])
+        r = client.get("/health")
+        check("GET /health 200", r.status_code == 200)
+        hb = r.json()
+        check("health broker reachable flag", "reachable" in hb["broker"])
 
-    r = client.get("/api/bridges")
-    check("GET /api/bridges 200", r.status_code == 200)
-    j = r.json()
-    check("50 bridges (1 hero + 49)", j["count"] == 50, f"got {j['count']}")
-    check("hero is z24", j["hero"]["id"] == "z24")
-    regs = [b for b in j["bridges"] if not b["hero"]]
-    check("49 regulators", len(regs) == 49)
-    check("regulator has real location", all("city" in b and b["lat"] for b in regs))
+        r = client.get("/api/bridges")
+        check("GET /api/bridges 200", r.status_code == 200)
+        j = r.json()
+        check("50 bridges (1 hero + 49)", j["count"] == 50, f"got {j['count']}")
+        check("hero is z24", j["hero"]["id"] == "z24")
+        regs = [b for b in j["bridges"] if not b["hero"]]
+        check("49 regulators", len(regs) == 49)
+        check("regulator has real location", all("city" in b and b["lat"] for b in regs))
+        # ROADMAP line 47: the seeded floor was widened to 40.0 so the full
+        # GREEN / AMBER / RED spread is actually reachable (was GREEN/AMBER only).
+        check("regulator spread reaches RED and AMBER",
+              any(b["state"] == "RED" for b in regs)
+              and any(b["state"] == "AMBER" for b in regs))
+        check("regulator bhi in widened [40,98] band",
+              all(40.0 <= b["bhi"] <= 98.0 for b in regs))
+        # line 47 perf: deterministic healths are computed once and reused across the
+        # 3x all_bridges() calls in /api/bridges (and every later request).
+        from app.regulator_bridges import _all_regulator_healths
+        h1 = _all_regulator_healths()
+        h2 = _all_regulator_healths()
+        check("regulator healths cached (identical + lru hit)",
+              h1 == h2 and _all_regulator_healths.cache_info().hits >= 1,
+              f"hits={_all_regulator_healths.cache_info().hits}")
 
-    r = client.get("/api/bridges/geojson")
-    check("geojson 50 features", r.status_code == 200 and len(r.json()["features"]) == 50)
+        r = client.get("/api/bridges/geojson")
+        check("geojson 50 features", r.status_code == 200 and len(r.json()["features"]) == 50)
 
-    r = client.get("/api/bridge/z24/state")
-    check("hero state 200", r.status_code == 200)
-    check("hero state has bhi", r.json().get("bhi") is not None)
+        r = client.get("/api/bridge/z24/state")
+        check("hero state 200", r.status_code == 200)
+        check("hero state has bhi", r.json().get("bhi") is not None)
 
-    r = client.get("/api/bridge/z24/history?metric=bhi&limit=10")
-    check("hero bhi history 200", r.status_code == 200 and "data" in r.json())
-    r = client.get("/api/bridge/z24/history?metric=rms&limit=10")
-    check("hero rms history 200", r.status_code == 200)
-    r = client.get("/api/bridge/z24/history?metric=nope")
-    check("bad metric -> 400", r.status_code == 400)
+        r = client.get("/api/bridge/z24/history?metric=bhi&limit=10")
+        check("hero bhi history 200", r.status_code == 200 and "data" in r.json())
+        r = client.get("/api/bridge/z24/history?metric=rms&limit=10")
+        check("hero rms history 200", r.status_code == 200)
+        r = client.get("/api/bridge/z24/history?metric=nope")
+        check("bad metric -> 400", r.status_code == 400)
 
-    r = client.get("/api/bridge/reg-01/history?metric=bhi&limit=5")
-    check("regulator history 200", r.status_code == 200 and len(r.json()["data"]) == 5)
-    r = client.get("/api/bridge/reg-01/state")
-    check("regulator state 200", r.status_code == 200 and r.json()["bhi"] > 0)
-    r = client.get("/api/bridge/nope/state")
-    check("unknown bridge -> 404", r.status_code == 404)
+        r = client.get("/api/bridge/reg-01/history?metric=bhi&limit=5")
+        check("regulator history 200", r.status_code == 200 and len(r.json()["data"]) == 5)
+        r = client.get("/api/bridge/reg-01/state")
+        check("regulator state 200", r.status_code == 200 and r.json()["bhi"] > 0)
+        r = client.get("/api/bridge/nope/state")
+        check("unknown bridge -> 404", r.status_code == 404)
 
-    # demo scenario control reaches the bus
-    got = []
-    tok = events.get_bus().subscribe("control/cmd", lambda t, p: got.append(p))
-    r = client.post("/api/demo/scenario", json={"scenario": "rupture"})
-    check("POST scenario 200", r.status_code == 200 and r.json()["ok"] is True)
-    check("scenario lands on bus", got and got[-1]["scenario"] == "rupture")
-    r = client.post("/api/demo/scenario", json={"scenario": "bogus"})
-    check("invalid scenario -> 422", r.status_code == 422)
-    events.get_bus().unsubscribe(tok)
+        # demo scenario control reaches the bus
+        got = []
+        tok = events.get_bus().subscribe("control/cmd", lambda t, p: got.append(p))
+        r = client.post("/api/demo/scenario", json={"scenario": "rupture"})
+        check("POST scenario 200", r.status_code == 200 and r.json()["ok"] is True)
+        check("scenario lands on bus", got and got[-1]["scenario"] == "rupture")
+        r = client.post("/api/demo/scenario", json={"scenario": "bogus"})
+        check("invalid scenario -> 422", r.status_code == 422)
+        events.get_bus().unsubscribe(tok)
+    finally:
+        # drop the cached store singleton so it cannot leak into other
+        # test modules in a shared process (ROADMAP line 58 - pytest-safe
+        # / order-independent)
+        db.reset_store()
 
 
 # ---------------------------------------------------------------------------
@@ -483,11 +552,28 @@ def test_demo():
     d = DemoDriver(settings, bus, pub, timeline="demo", speed=1000.0)
     # fire all beats immediately (speed huge -> sleeps skipped)
     d.stop()  # not needed for _fire; call directly
-    d._fire(BEATS[2], 2)
+    got_cv = []
+    cv_tok = bus.subscribe("control/cmd", lambda t, p: got_cv.append(p))
+    d._fire(BEATS[2], 2)   # crack-detected beat -> REAL cv evidence on control/cmd
     d._fire(BEATS[3], 3)
     d._fire(BEATS[4], 4)
-    check("crack beat sends cv cmd", any(p.get("cmd") == "cv" for _, p in
-                                         [(None, a["payload"]) for a in BEATS[2]["actions"]]))
+    bus.unsubscribe(cv_tok)
+    # ROADMAP line 59: the crack-beat assertions below are BEHAVIORAL — they
+    # fire the beat (`_fire`) and assert on the payload it actually emits, never
+    # on the static BEATS definition.  The cv cmd goes to the bus (demo_driver
+    # publishes control/cmd directly); the alert/status actions go through
+    # emit() and land on the FakePublisher (asserted just below).
+    check("crack beat emits cv evidence on the bus", any(p.get("cmd") == "cv" for p in got_cv))
+    check("cv evidence carries cv_feed source",
+          any(p.get("cmd") == "cv" and p.get("source") in ("cv_feed", "cv_feed-fallback")
+              for p in got_cv))
+    check("cv evidence payload fully formed (real model output envelope)",
+          any(p.get("cmd") == "cv"
+              and {"cmd", "value", "source", "frame", "conf", "area_norm", "model", "ts"}
+                  <= set(p)
+              for p in got_cv))
+    # publisher output: the bhi-drop beat's critical fusion alert routes through
+    # emit() and must land on the FakePublisher (not just the bus)
     check("bhi-drop sends alerts", len(pub.alerts) >= 1)
     if pub.alerts:
         a = pub.alerts[-1]

@@ -11,6 +11,8 @@
   --green: #16a34a;
   --amber: #d97706;
   --red: #dc2626;
+  --grid: #e2e8f0;      /* light track / grid lines (gauge band, SVG fallback) */
+  --chart-line: #94a3b8; /* dashed uncertainty lines (slate-400) */
   --mono: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', 'Consolas', monospace;
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
@@ -51,13 +53,51 @@ button {
   overflow: hidden;
 }
 
+/* Top-level error boundary fallback card (keeps a live demo on screen). */
+.error-boundary-card {
+  margin: 20vh auto 0;
+  width: min(520px, 90vw);
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+  text-align: left;
+}
+
+.error-boundary-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--danger, var(--red));
+  margin-bottom: 8px;
+}
+
+.error-boundary-msg {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-soft, #475569);
+  margin-bottom: 14px;
+  word-break: break-word;
+}
+
+.error-boundary-reset {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .hud-top {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 0 14px;
   border-bottom: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--panel);
 }
 
 .brand {
@@ -205,7 +245,7 @@ button {
 
 .hud-bottom {
   border-top: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--panel);
   display: flex;
   align-items: center;
   padding: 0 14px;
@@ -367,6 +407,21 @@ button {
   background: var(--red);
 }
 
+/* ROADMAP line 68: floor vs trained-push split under the vib sub-bar. */
+.vib-evidence {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin: -2px 0 8px 0;
+}
+
+.vib-evidence-key {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
 .chart-empty {
   font-family: var(--mono);
   color: var(--muted);
@@ -389,7 +444,7 @@ button {
   border-left-width: 3px;
   border-radius: 6px;
   padding: 6px 8px;
-  background: #ffffff;
+  background: var(--panel);
 }
 
 .alert.severity-info {
@@ -545,7 +600,7 @@ button {
 }
 
 .story-btn {
-  background: #ffffff;
+  background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -615,7 +670,7 @@ button {
 .map-fallback {
   position: absolute;
   inset: 0;
-  background: #f8fafc;
+  background: var(--bg);
 }
 
 .map-fallback svg {
@@ -661,8 +716,8 @@ button {
 /* --- 3D popup ------------------------------------------------------------- */
 .popup {
   width: 272px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
   color: var(--text);
@@ -733,7 +788,7 @@ button {
 }
 
 .stat {
-  background: #f8fafc;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 4px;
@@ -792,7 +847,7 @@ button {
 
 .hud-right::-webkit-scrollbar-thumb,
 .alert-list::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border);
   border-radius: 4px;
 }
 
@@ -817,11 +872,22 @@ button {
 
   .hud-body,
   .hud-body.no-map {
+    position: relative;
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* ROADMAP line 87: keep the right telemetry panels readable on small screens
+     — slide them over the scene as a scrollable drawer instead of hiding them.
+     The left HUD (map) is dropped; the scene stays full-bleed behind. */
   .hud-right {
-    display: none;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(352px, 94vw);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 24px rgb(15 23 42 / 0.18);
+    z-index: 4;
   }
 }
 
@@ -1022,7 +1088,7 @@ button {
   bottom: 12px;
   width: 168px;
   padding: 8px 10px;
-  background: #ffffffd9;
+  background: var(--panel)d9;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: var(--mono);
@@ -1088,7 +1154,7 @@ button {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--muted);
-  background: #ffffffd9;
+  background: var(--panel)d9;
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px 9px;
@@ -1118,7 +1184,7 @@ button {
 }
 
 .det-stat {
-  background: #f8fafc;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 4px;
@@ -1153,6 +1219,13 @@ button {
   margin-top: 2px;
 }
 
+.det-rule {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  margin: 2px 0 6px;
+}
+
 /* --- D2-7 georeferenced context view (Cesium) ------------------------------ */
 .geo-shell {
   position: absolute;
@@ -1172,9 +1245,9 @@ button {
   height: 100%;
 }
 
-.geo-canvas .cesium-viewer-bottom {
-  display: none; /* ion credits are small; keep the view clean for the demo */
-}
+/* Cesium ion attribution stays VISIBLE (bottom-right, default widget CSS).
+   ion's ToS requires the credit, and it does not collide with the bottom-left
+   .geo-caption — the old display:none override (ROADMAP line 86) is removed. */
 
 .geo-caption {
   position: absolute;
@@ -1195,7 +1268,7 @@ button {
   font-family: var(--mono);
   font-size: 10px;
   color: var(--text);
-  background: #ffffffd9;
+  background: var(--panel)d9;
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 3px 9px;
@@ -1221,7 +1294,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: #f8fafc;
+  background: var(--bg);
   z-index: 4;
   text-align: center;
   padding: 24px;

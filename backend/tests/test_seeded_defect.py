@@ -178,6 +178,31 @@ def test_describe_honesty() -> None:
           all(a["zone"] and a["source"] for a in full["active"]))
 
 
+def test_describe_s101() -> None:
+    print("[seeded-defect] S101 describe + bare-script import (ROADMAP line 43)")
+    s = sd.describe({"girder_saw_cut": 1.0})
+    check("s101: label is the saw-cut", s["label"] == "girder saw-cut",
+          repr(s["label"]))
+    check("s101: active lists the saw-cut at 85%",
+          [a["key"] for a in s["active"]] == ["girder_saw_cut"]
+          and s["active"][0]["ei_loss_pct"] == 85.0,
+          str([(a["key"], a["ei_loss_pct"]) for a in s["active"]]))
+    check("s101: dominant = saw-cut", s["dominant_key"] == "girder_saw_cut")
+    check("s101: source is S101 benchmark", s["source"] == "S101 benchmark")
+    check("s101: f1 drifts down (physical)", s["f1_drift_pct"] < 0.0,
+          f"{s['f1_drift_pct']}")
+    check("s101: note still seeded/not-certified",
+          "seeded" in s["note"] and "not a certified" in s["note"])
+    # Bug B regression: the module must run as a bare script (relative-import
+    # fallback), not just under the backend package context.
+    import subprocess
+    r = subprocess.run([sys.executable, "models/vibration/seeded_defect.py"],
+                       cwd=str(ROOT), capture_output=True, text=True,
+                       timeout=180)
+    check("bare-script run exits 0 (relative-import fallback)",
+          r.returncode == 0, (r.stdout + r.stderr)[-400:])
+
+
 def test_simulator_wiring() -> None:
     print("[seeded-defect] simulator wiring (no forced 4 Hz tonal)")
     from app import simulator as sim_mod
@@ -238,6 +263,7 @@ def main() -> int:
         test_fem_consistency()
         test_per_span_loss()
         test_describe_honesty()
+        test_describe_s101()
         test_simulator_wiring()
     except Exception as exc:
         global FAIL

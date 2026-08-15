@@ -22,12 +22,15 @@ Honesty:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 import numpy as np
 
 from app import contract
 from app.config import Settings
+
+log = logging.getLogger(__name__)
 
 # --- documented synthetic measurement chain ------------------------------------
 # A typical MEMS accelerometer + 12-bit ADC on a 100 Hz SHM node.
@@ -141,7 +144,22 @@ _data_source: str = "synthetic"
 def set_data_source(source: str) -> None:
     global _data_source
     if source in ("z24-replay", "synthetic", "live-demo"):
-        _data_source = source
+        if source != _data_source:
+            _data_source = source
+            # item 13: a data-source switch changes the signal character, so the
+            # anomaly heuristic's healthy envelope (app.anomaly, process-global
+            # _baseline shared across all nodes) must not leak a stale reference
+            # across the transition — e.g. a future z24-replay -> synthetic
+            # switch would otherwise carry an old healthy RMS/tonality reference
+            # and misread the new stream.  Reset here at the single choke point
+            # every switch passes through (lazy import: anomaly is numpy-only,
+            # no circularity).
+            try:
+                from app import anomaly as anomaly_mod
+                anomaly_mod.reset_anomaly_baseline()
+                log.debug("anomaly baseline reset on data-source -> %s", source)
+            except Exception as exc:  # pragma: no cover - defensive
+                log.debug("anomaly baseline reset skipped (%s)", exc)
 
 
 def get_data_source() -> str:
@@ -172,7 +190,8 @@ def channel_entry(cfg: Settings, node: int, data_source: str) -> dict:
 
 def build_manifest(cfg: Settings, data_source: Optional[str] = None,
                    live_active: bool = False,
-                   live_status: Optional[dict] = None) -> dict:
+                   live_status: Optional[dict] = None,
+                   edge_status: Optional[dict] = None) -> dict:
     """One self-describing data-realism manifest the UI (D1-6) reads."""
     data_source = data_source or get_data_source()
     if data_source not in ("z24-replay", "synthetic", "live-demo"):
@@ -212,6 +231,15 @@ def build_manifest(cfg: Settings, data_source: Optional[str] = None,
             "bridge": "live-demo",
             "note": "third-party demo data — never fused into the z24 BHI",
             "status": live_status or {},
+        },
+        "edge_node": {
+            "bridge": "esp32-1",
+            "real_hardware": True,
+            "note": "real ESP32 DevKit (ESP32-WROOM-32, WiFi+MQTT) edge node — "
+                    "accel is a labeled SELF-TEST/BIST tone (no accelerometer "
+                    "attached); RSSI/heap/uptime are real; never fused into the "
+                    "z24 BHI",
+            "status": edge_status or {},
         },
         "datasets": datasets,
     }

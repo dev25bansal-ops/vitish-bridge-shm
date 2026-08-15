@@ -9,11 +9,11 @@ Component 3 of 4. The shell is built BEFORE H0; the 8-hour budget inside the 36 
 
 ## Architecture rules
 
-- **Parametric Morbi-style suspension bridge from primitives** (<10k tris) — NOT a downloaded GLB (can't rig a static model for collapse replay).
+- **Parametric Z24 box girder from primitives** (58 m 14+30+14, two piers, <10k tris — no towers/cables; component file still named `MorbiBridge.tsx` from the Morbi phase, legacy `cableBroken`/`cableDrop` flags slated for removal in the scene-hygiene batch) — NOT a downloaded GLB.
 - One `<InstancedMesh>` for all sensors = **1 draw call**.
 - Browser-native **WebSocket** (no lib) → **zustand store** ← broker.
 - drei `Html` popups + **Recharts** spectrum (256-pt window).
-- **MapLibre GL 6** (~60-line wrapper) + OpenFreeMap 50-bridge regulator view (real US NBI locations, simulated BHI) — not react-map-gl, **no Cesium**.
+- **MapLibre GL 6** (~60-line wrapper) + OpenFreeMap 50-bridge regulator view (real US NBI locations, simulated BHI) — not react-map-gl; **optional Cesium Geo view added in D2-7** (dynamically imported, ion token in gitignored `twin/.env`).
 - **SVG-map fallback** if tiles are offline; prewarm/cache tiles at the venue.
 
 ## Pinned versions
@@ -29,7 +29,7 @@ Component 3 of 4. The shell is built BEFORE H0; the 8-hour budget inside the 36 
 | 1:30–3:00 | Live bindings: 2 modal frequencies, temperature, BHI with **amplified deflection (~100×)** |
 | 3:00–4:30 | instancedMesh sensor markers + raycast click + Html popup + Recharts spectrum |
 | 4:30–6:00 | MapLibre 50-bridge map + selection sync |
-| 6:00–7:00 | Storyboard scenes: cable break, deck sag, **BHI 87 → 12 sensor cascade** |
+| 6:00–7:00 | Storyboard scenes: cable break, deck sag, **BHI 87 → 34 sensor cascade** (verified RED 33.6, [[Storyboard]]) |
 | 7:00–8:00 | Perf pass (`dpr={[1,1.5]}`, shadows off, memo popups) + **network-off test** |
 
 ## Store / WS

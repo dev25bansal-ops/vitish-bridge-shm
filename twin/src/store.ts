@@ -39,6 +39,8 @@ export interface LiveState {
   rms: number
   freq: number
   flag: number
+  /** ROADMAP line 68: floor vs trained-push split of the last scored window. */
+  vibEvidence?: { floor: number; trained_push: number; score: number }
 }
 
 /** Z24 box-girder physics overlay (see backend/app/stiffness.py). */
@@ -160,6 +162,7 @@ export interface TwinState {
   nodeSeen: Record<number, number>
   setSelectedBridgeId: (id: string) => void
   setSelectedSensorId: (id: number | null) => void
+  setBridges: (bridges: Bridge[]) => void
   setLive: (patch: Partial<LiveState>) => void
   setStiffness: (s: Partial<StiffnessState>) => void
   setSeededDefect: (s: Partial<SeededDefectState>) => void
@@ -178,7 +181,13 @@ export interface TwinState {
 export const BHI_GREEN = 70.0
 export const BHI_AMBER = 50.0
 export const BHI_W = { cv: 0.4, vib: 0.35, load: 0.25 }
+export const AGE_FACTOR = 1.0 // demo: 1.0 (age model added on pilot data)
+export const TRAFFIC_FACTOR = 1.0 // demo: 1.0
 export const WINDOW_N = 1024
+export const FS_HZ = 100
+export const WINDOW_S = WINDOW_N / FS_HZ // 10.24 s
+export const WINDOW_LABEL = `window ${WINDOW_S} s · fs ${FS_HZ} Hz`
+export const F1_REF_HZ = 3.8 // Z24 healthy first-bending reference (f2 = 15.2)
 export const BRIDGE_DECK_Y = 6 // Z24 box-girder deck soffit height (m)
 
 export function stateFor(bhi: number): HealthState {
@@ -187,12 +196,28 @@ export function stateFor(bhi: number): HealthState {
   return 'RED'
 }
 
-export function computeBhi(cv: number, vib: number, load: number): number {
+// Mirrors backend contract.compute_bhi(cv, vib, load, w, age_factor, traffic_factor)
+// exactly for the default weights — same weighted penalty, same age/traffic
+// multipliers (default 1.0 in the demo), same round-to-0.1.  NOTE: the backend's
+// 4th positional param is a weights override `w`; this twin keeps the weights
+// fixed as BHI_W and puts ageFactor in the 4th slot, so positional args beyond
+// the third do NOT line up with the Python signature.  Only the 3-arg form is
+// used in the demo path (fixtures.ts / ws.ts both call 3-arg), so the parity
+// that matters is exact; a caller wanting custom weights must change both sides.
+// ageFactor/trafficFactor default to the shared constants so callers get the
+// honest contract value unless they opt in.
+export function computeBhi(
+  cv: number,
+  vib: number,
+  load: number,
+  ageFactor = AGE_FACTOR,
+  trafficFactor = TRAFFIC_FACTOR,
+): number {
   const c = Math.min(1, Math.max(0, cv))
   const v = Math.min(1, Math.max(0, vib))
   const l = Math.min(1, Math.max(0, load))
   const penalty = BHI_W.cv * c + BHI_W.vib * v + BHI_W.load * l
-  const bhi = 100 * (1 - penalty)
+  const bhi = 100 * (1 - penalty) * ageFactor * trafficFactor
   return Math.round(Math.min(100, Math.max(0, bhi)) * 10) / 10
 }
 
@@ -201,11 +226,11 @@ const ALERTS_MAX = 40
 let alertSeq = 0
 
 const STIFFNESS_EMPTY: StiffnessState = {
-  f1Meas: 3.8,
-  f1Ref: 3.8,
+  f1Meas: F1_REF_HZ,
+  f1Ref: F1_REF_HZ,
   eiDriftPct: 0,
   damagePct: 0,
-  freqs: [3.8],
+  freqs: [F1_REF_HZ],
   x: [],
   shapes: [],
   baselineLocked: false,
@@ -217,8 +242,8 @@ const SEEDED_DEFECT_EMPTY: SeededDefectState = {
   active: [],
   label: 'none',
   source: '',
-  f1: 3.8,
-  f1Ref: 3.8,
+  f1: F1_REF_HZ,
+  f1Ref: F1_REF_HZ,
   f1DriftPct: 0,
   eiLossPct: 0,
   perSpanLossPct: [0, 0, 0],
@@ -257,7 +282,7 @@ export const useStore = create<TwinState>((set, get) => ({
   ],
   selectedBridgeId: 'z24',
   selectedSensorId: null,
-  live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: 3.8, flag: 0 },
+  live: { bhi: 82.0, u: 1.8, cv: 0.12, vib: 0.14, load: 0.3, state: 'GREEN', rms: 0.08, freq: F1_REF_HZ, flag: 0, vibEvidence: { floor: 0.14, trained_push: 0, score: 0.14 } },
   stiffness: STIFFNESS_EMPTY,
   seededDefect: SEEDED_DEFECT_EMPTY,
   manifest: MANIFEST_OFFLINE,
@@ -272,6 +297,8 @@ export const useStore = create<TwinState>((set, get) => ({
 
   setSelectedBridgeId: (id) => set({ selectedBridgeId: id }),
   setSelectedSensorId: (id) => set({ selectedSensorId: id }),
+
+  setBridges: (bridges) => set({ bridges }),
 
   setLive: (patch) => {
     const live = { ...get().live, ...patch }

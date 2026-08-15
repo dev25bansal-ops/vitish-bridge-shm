@@ -51,6 +51,6 @@ npm i <the above pinned deps>
 - `@types/three` is **mandatory** (three 0.185 ships zero .d.ts).
 - Keep TS on ~6.0.2 — don't jump to 7.x mid-hackathon.
 - Render text as HTML/CSS or drei `Html` — **avoid drei `<Text>`** (troika fetches a CDN font → offline hazard).
-- **No CesiumJS** (141 MB package, ion token needed). MapLibre 6 is enough.
+- **CesiumJS only as an optional, dynamically-imported Geo view** (D2-7) — the ~30 MB chunk loads only when the "Geo view" button opens; the ion token lives in gitignored `twin/.env` and is NEVER committed. **MapLibre 6 remains the default fleet view** — no token, offline-safe.
 
 Related: [[Digital-Twin]] · [[System-Architecture]] · [[Pre-Hackathon-Checklist]]

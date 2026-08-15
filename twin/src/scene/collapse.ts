@@ -12,31 +12,32 @@
 // store.  Until the first snapshot arrives we fall back to the analytic
 // reference simple-span mode φ1 = sin(π·x/30) over the main span.
 import type { Scenario } from '../store'
-import { useStore } from '../store'
+import { useStore, F1_REF_HZ, BRIDGE_DECK_Y } from '../store'
 
 export interface CollapseState {
-  cableBroken: boolean // legacy flag — no cables on a box girder; always false
-  cableDrop: number // unused (kept for call-site compatibility)
   sag: number // 0..1 mid-span static deflection (damage)
   cascade: number // 0..1 first-mode flexing amplitude (exaggerated)
 }
 
 export const collapseState: CollapseState = {
-  cableBroken: false,
-  cableDrop: 0,
   sag: 0,
   cascade: 0,
 }
 
+// Damage-tint saturation point for the main-span heat map — the deck tint
+// reaches full saturation at this % EI stiffness loss, and the scene legend
+// (SceneOverlay "35%+") labels the top of the ramp with the SAME number so the
+// two can't desync.  Shared with MorbiBridge.segColor.
+export const DAMAGE_SAT_PCT = 35
+
 export const BRIDGE = {
   L: 58, // total superstructure length (14 + 30 + 14)
   half: 29,
-  deckY: 6, // deck soffit height above the river
+  deckY: BRIDGE_DECK_Y, // deck soffit height above the river (store is the source)
   pierX: 14, // interior piers at x = ±14
   mainHalf: 15, // main (middle) span: x ∈ [-15, +15] = 30 m
   deckW: 5.4, // box-girder deck width (m)
   deckH: 1.6, // box-girder depth (m)
-  zDeck: 2.3, // half-depth offset for deck-surface markers
 }
 
 const T_ANIM_MAX = 15 // 15 s story arc (kept from the cable-stay bridge)
@@ -91,7 +92,7 @@ export function modePhi1(x: number): number {
 /** Measured first vertical-mode frequency (Hz) from the physics overlay. */
 export function modeFreq1(): number {
   const f = useStore.getState().stiffness.freqs[0]
-  return f > 0 ? f : 3.8
+  return f > 0 ? f : F1_REF_HZ
 }
 
 /**
@@ -106,7 +107,12 @@ export function wobble(x: number, t: number): number {
   return amp * Math.sin(2 * Math.PI * modeFreq1() * t)
 }
 
-/** Deck soffit height at scene x (static base + mid-span damage droop). */
+/** Deck soffit height at scene x (static base + mid-span damage droop).
+ *
+ * The droop is a VISUAL EXAGGERATION like the wobble: max 1.7 m of sag is far
+ * beyond real deflection (mm–cm), amplified so the damage reads on screen.
+ * The D2-9 caption ("deformation & mode flex exaggerated for visibility — not
+ * to scale") covers it; keep this comment honest about the scale. */
 export function deckYAt(x: number): number {
   // Static droop from the mid-span stiffness loss — a bell centred on the
   // main-span mid-point (x = 0), ~0 at the interior piers (x = ±14).

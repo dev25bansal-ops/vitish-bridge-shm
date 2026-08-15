@@ -43,6 +43,10 @@ log = logging.getLogger(__name__)
 
 # beat: {"t": seconds, "name": str, "desc": str, "actions": [dict ...]}
 #   action kinds: {"kind": "cmd", "payload": {...}}          -> control/cmd
+#                 {"kind": "cv", "frame": str, "fallback": float, "alert": {...}}
+#                                                            -> real CV evidence
+#                                                               (backend/app/cv_feed.py,
+#                                                                ROADMAP line 42)
 #                 {"kind": "alert", "payload": {...}}         -> bridge/<id>/alert
 #                 {"kind": "status", "payload": {...}}        -> bridge/<id>/status
 BEATS: List[Dict[str, Any]] = [
@@ -61,10 +65,10 @@ BEATS: List[Dict[str, Any]] = [
     {
         "t": 45.0, "name": "crack-detected", "desc": "CV model detects crack at section 3 — visual evidence rises",
         "actions": [
-            {"kind": "cmd", "payload": {"cmd": "cv", "value": 0.30}},
-            {"kind": "alert", "payload": {
+            {"kind": "cv", "frame": "mild_crack.jpg", "fallback": 0.30,
+             "alert": {
                 "severity": "warning", "source": "cv",
-                "text": "Crack detected at section 3 (web) — 12.4 cm, conf 0.87",
+                "text": "Crack detected at section 3 (web) — conf {conf:.2f}, crack area {area:.1f}% of frame",
                 "recommendation": "Schedule close visual inspection; correlate with vibration"}},
         ],
     },
@@ -82,7 +86,7 @@ BEATS: List[Dict[str, Any]] = [
         "t": 110.0, "name": "bhi-drop", "desc": "BHI drops 87 → RED (load + CV evidence push it critical)",
         "actions": [
             {"kind": "cmd", "payload": {"cmd": "load", "value": 0.40}},
-            {"kind": "cmd", "payload": {"cmd": "cv", "value": 0.55}},
+            {"kind": "cv", "frame": "severe_crack.jpg", "fallback": 0.55},
             {"kind": "alert", "payload": {
                 "severity": "critical", "source": "fusion",
                 "text": "Bridge Health Index dropped to RED (crossed 50 — critical)",
@@ -167,6 +171,8 @@ class DemoDriver:
             if kind == "cmd":
                 self.bus.publish("control/cmd", dict(payload, source="demo_driver"),
                                  source="demo_driver")
+            elif kind == "cv":
+                self._fire_cv(beat, action, idx * 10 + j)
             elif kind == "alert":
                 emit(contract.TOPIC_ALERT.format(bridge=self.cfg.bridge_id),
                      _alert_payload(self.cfg, payload, idx * 10 + j),
@@ -175,6 +181,37 @@ class DemoDriver:
                 emit(contract.TOPIC_STATUS.format(bridge=self.cfg.bridge_id),
                      _status_payload(self.cfg, payload, idx * 10 + j),
                      self.publisher, bus=self.bus)
+
+    def _fire_cv(self, beat: dict, action: dict, msg_id: int) -> None:
+        """Run one real demo frame through CrackDetector and emit cv evidence.
+
+        ROADMAP line 42: the cv value is the real model output for the curated
+        frame (cv_feed.evidence); the scripted value is only the tagged
+        fallback when the real path is unavailable. The alert text (if any)
+        embeds the REAL confidence and crack area, never the scripted claim.
+        """
+        from app import cv_feed
+        res = cv_feed.evidence(
+            action.get("frame", "mild_crack.jpg"),
+            float(action.get("fallback", 0.30)),
+        )
+        cmd = {"cmd": "cv", "value": res["cv"], "source": res["source"],
+               "frame": res["frame"], "conf": res["conf"],
+               "area_norm": res["area_norm"], "model": res["model"],
+               "ts": contract.now()}
+        self.bus.publish("control/cmd", cmd, source="demo_driver")
+        log.info("beat %-24s cv evidence %s -> cv=%.3f (conf=%.3f, area=%.5f, frame=%s)%s",
+                 beat["name"], res["source"], res["cv"], res["conf"],
+                 res["area_norm"], res["frame"],
+                 " [FALLBACK]" if res.get("fallback") else "")
+        alert = action.get("alert")
+        if alert and not res.get("fallback"):
+            # only publish the real-evidence alert; a fallback must not claim a
+            # real detection (the generic fusion critical alert covers the arc).
+            a = dict(alert)
+            a["text"] = a["text"].format(conf=res["conf"], area=res["area_norm"] * 100)
+            emit(contract.TOPIC_ALERT.format(bridge=self.cfg.bridge_id),
+                 _alert_payload(self.cfg, a, msg_id), self.publisher, bus=self.bus)
 
     def stop(self) -> None:
         self._stop.set()

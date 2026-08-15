@@ -17,6 +17,7 @@ created: 2026-08-13
 - **#12:** Latency splits into **~200 ms streaming vs ~10.5 s + inference anomaly**; pick QoS 1 or 2, not both.
 - **#16:** Reconcile $5–15/mo vs $46.7/mo TCO, $500 vs $560/yr, $300 vs $588 hardware (state the MPU6050-class downgrade explicitly).
 - **#19:** Replace "would have flagged Morbi weeks early" with the reframe in [[Storyboard]].
+- **Q3/Q4 (2026-08-15):** Q4 previously claimed "the official .mat files under the KU Leuven license" — **registration is NOT done**, we use the MIT-licensed processed mirror, scenario names are chronology-inferred. Q3 previously claimed "we reliably catch settlement ≥4 cm, spalling, tendon rupture" — the measured per-scenario recall is **0.002** ([[Metrics]]); only the demo healthy-vs-rupture envelope separates (1.0). Both answers rewritten to say exactly that.
 
 ## The 12 canned answers (verbatim)
 
@@ -30,11 +31,11 @@ created: 2026-08-13
 
 **Q3 — FPR 4% means 2 of 50 bridges are always red (alarm fatigue). What's your miss rate on EARLY damage like the 2 cm settlement?**
 
-"We'll show the full confusion matrix by Z24 scenario, not one F1. Honest weakness: early subtle stages — we reliably catch settlement ≥4 cm, spalling, tendon rupture; the 2 cm stage may sit inside the healthy envelope. A miss is fatal, a false alarm only costs inspection time, so we weight visual evidence higher, require confirmation before any closure recommendation, and track early-stage sensitivity as a documented pilot metric."
+"We'll show both confusion matrices, and the honest headline is that the raw per-window Z24 classifier does **not** separate subtle progressive stages — measured recall **0.002** on the 17-scenario benchmark ([[Metrics]]). What does separate cleanly is our demo's healthy-vs-rupture envelope (precision/recall **1.0** at mean+3σ) — that is the staged rupture arc, and we do **not** claim it catches a 2 cm settlement. A miss is fatal and a false alarm only costs inspection time, so the production BHI never leans on vibration alone: it fuses CV + load, weights visual evidence higher, requires confirmation before any closure recommendation, and tracks early-stage sensitivity as a documented pilot metric."
 
 **Q4 — Z24 needs a signed KU Leuven research agreement. Did you sign it? Is that HuggingFace copy authorized?**
 
-"We hold the data under the KU Leuven research license for evaluation, using the official .mat files; we did not rely on third-party redistributions for validation. The research license excludes commercial use — that's why the pilot deploys sensors on a partner PWD bridge and transitions to self-captured data."
+"Honest answer: **no, we have not completed the KU Leuven registration.** We work from a publicly mirrored, **MIT-licensed** processed copy (`thanglexuan/Z24-dataset-processed` — provenance in [[Z24-Benchmark]]), not the official .mat release, and the mirror omits a label legend, so our per-scenario names are *chronology-inferred*, not confirmed against the portal. We treat any published benchmark claim as provisional until we register and verify against the official release — which is also why the demo never fuses this data into a live production BHI. A commercial pilot would license/register properly and transition to self-captured data."
 
 **Q5 — Z24 is a Swiss concrete highway bridge; Morbi was a steel suspension footbridge. What transfers?**
 

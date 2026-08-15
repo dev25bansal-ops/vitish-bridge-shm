@@ -13,6 +13,11 @@ Honesty + safety rules:
     OWN healthy envelope (high-water mark seen during warm-up), so a model with
     no discriminative signal returns ~0 and can never create a false alarm or
     break the GREEN->RED story arc.  The floor always remains the base.
+  * EXPERIMENTAL RELABEL (ROADMAP line 40): the SHIPPED artifacts are inert —
+    scaler.pkl has a near-zero-variance feature, so scores saturate to ~0.9743
+    for healthy AND damaged and this module returns 0.0 (measured).  The
+    deterministic spectral floor in backend/app/anomaly.py carries the demo arc.
+    A non-degenerate retrain (ROADMAP line 117) re-enables the ensemble.
   * ``push == 0.0`` during warm-up (the first ``n_healthy`` windows are absorbed
     as healthy evidence) and when no trained artifacts exist in models/weights/.
   * Trained artifacts are loaded lazily on first call and cached for the process
@@ -31,9 +36,10 @@ _detector_failed = False
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_WEIGHTS = _REPO_ROOT / "models" / "weights"
 
-# 5 windows (~51 s real-time) — completes during the healthy phase of the
-# 175 s demo, well before the ~75 s damage onset, so the envelope is built from
-# genuinely healthy windows.
+# 5 windows × 1024 samples @ 100 Hz ≈ 51 s of simulated time at the demo's
+# default --rate 1.0 (wall-clock scales with --rate, e.g. ~15 s at rate 3.4).
+# Completes during the healthy phase of the 175 s story, well before the ~75 s
+# damage onset, so the envelope is built from genuinely healthy windows.
 _N_HEALTHY = 5
 
 

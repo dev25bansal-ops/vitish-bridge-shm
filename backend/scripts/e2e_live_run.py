@@ -1,4 +1,14 @@
-"""End-to-end: launch run_all.py --live, hit /api/live, verify, then stop."""
+"""End-to-end: launch run_all.py --live, hit /api/live, verify, then stop.
+
+PASS requires the live feed to have ACTUALLY ingested bytes (received > 0),
+not merely that the thread is alive. `enabled === True` alone only proves the
+poller thread started — zero bytes can flow and the e2e would still pass,
+which is the defect ROADMAP line 90 names. The /api/live payload carries
+`received`/`published` from feed.status(), so the check needs no api.py change.
+
+The public broker is intermittent, so we poll up to ~40 s; a FAIL with
+`received=0` honestly means no messages flowed during the window.
+"""
 import subprocess
 import sys
 import time
@@ -34,16 +44,22 @@ try:
     print("PORT:", port)
     if port:
         url = f"http://127.0.0.1:{port}/api/live"
-        for _ in range(40):
+        for _ in range(80):  # ~40 s: public feed is intermittent, keep polling
             try:
                 with urllib.request.urlopen(url, timeout=2) as r:
                     body = r.read().decode()
                     import json
                     live["json"] = json.loads(body)
                     live["ok"] = live["json"].get("enabled") is True
-                    break
+                    live["received"] = live["json"].get("received", 0)
+                    live["published"] = live["json"].get("published", 0)
+                    # keep polling until bytes actually flow — a PASS must mean
+                    # ingestion, not just a living thread (ROADMAP line 90)
+                    if live["received"] > 0:
+                        break
             except Exception:
-                time.sleep(0.5)
+                pass
+            time.sleep(0.5)
     print("LIVE JSON:", live.get("json"))
     print("BANNER LINE:", live.get("banner_line"))
 finally:
@@ -53,6 +69,8 @@ finally:
     except Exception:
         proc.kill()
 
-ok = live.get("ok") and live.get("banner")
-print("E2E RESULT:", "PASS" if ok else "FAIL")
+ok = live.get("ok") and live.get("banner") and live.get("received", 0) > 0
+print("E2E RESULT:", "PASS" if ok else "FAIL",
+      f"(enabled={live.get('ok')} received={live.get('received', 0)} "
+      f"published={live.get('published', 0)} banner={bool(live.get('banner'))})")
 sys.exit(0 if ok else 1)

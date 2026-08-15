@@ -9,9 +9,16 @@
 // shows the offline state instead of inventing a data source.
 import { useStore } from '../store'
 import type { ChannelProvenance } from '../store'
+import { warnOnce } from './warnOnce'
+import { apiBase } from './config'
 
-const MANIFEST_URL = 'http://127.0.0.1:8000/api/manifest'
 const POLL_MS = 5000
+
+// The only data sources the twin knows how to label.  Anything else on the wire
+// (e.g. a future backend value the twin hasn't been taught) degrades to the
+// honest 'offline' label instead of being cast through and shown verbatim.
+const DATA_SOURCES = ['z24-replay', 'synthetic', 'live-demo', 'offline'] as const
+type DataSource = (typeof DATA_SOURCES)[number]
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -32,18 +39,23 @@ function mapChannels(raw: unknown): ChannelProvenance[] {
 
 async function poll(): Promise<void> {
   try {
-    const res = await fetch(MANIFEST_URL)
+    const res = await fetch(`${apiBase()}/api/manifest`)
     if (!res.ok) return
     const m = (await res.json()) as Record<string, unknown>
     if (typeof m.data_source !== 'string') return
     const honesty = (m.honesty ?? {}) as Record<string, unknown>
     const live = (m.live_public_feed ?? {}) as Record<string, unknown>
+    const rawSource = typeof m.data_source === 'string' ? m.data_source : ''
+    const knownSource = (DATA_SOURCES as readonly string[]).includes(rawSource)
+    const dataSource: DataSource = knownSource ? (rawSource as DataSource) : 'offline'
     const st = useStore.getState()
     st.setManifest({
-      dataSource: (m.data_source as 'z24-replay' | 'synthetic' | 'live-demo' | 'offline') ?? 'offline',
+      dataSource,
       dataSourceLabel: typeof m.data_source_label === 'string'
         ? (m.data_source_label as string)
-        : String(m.data_source),
+        : knownSource
+          ? rawSource
+          : 'offline (unknown source from backend)',
       channels: mapChannels(m.channels),
       honestyNote: typeof honesty.note === 'string'
         ? (honesty.note as string)
@@ -53,6 +65,7 @@ async function poll(): Promise<void> {
     })
   } catch {
     // backend unreachable — honest offline default stays in effect
+    warnOnce('manifest', 'GET /api/manifest failed — provenance panel shows offline default')
   }
 }
 

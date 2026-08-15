@@ -3,7 +3,15 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Scenario } from '../store'
 import { useStore } from '../store'
-import { BRIDGE, deckYAt, resetCollapse, tickCollapse, wobble } from './collapse'
+import {
+  BRIDGE,
+  DAMAGE_SAT_PCT,
+  collapseState,
+  deckYAt,
+  resetCollapse,
+  tickCollapse,
+  wobble,
+} from './collapse'
 
 // 2 m deck segments over the 58 m superstructure (14 + 30 + 14).
 const SEGS = 29
@@ -12,10 +20,12 @@ const deckX = (i: number) => -BRIDGE.half + SEG_W / 2 + i * SEG_W
 const WEB_X = BRIDGE.deckW / 2 - 0.17
 
 // Damage tint: main-span segments warm toward amber/red as the measured
-// stiffness loss grows; side spans stay near-neutral concrete grey.
+// stiffness loss grows; side spans stay near-neutral concrete grey.  The ramp
+// saturates at DAMAGE_SAT_PCT % loss — the SAME number the SceneOverlay legend
+// labels "35%+" — so the visual ceiling is one constant.
 function segColor(x: number, damagePct: number): string {
   if (Math.abs(x) > BRIDGE.mainHalf) return '#9aa2ab'
-  const d = Math.max(0, Math.min(1, damagePct / 35))
+  const d = Math.max(0, Math.min(1, damagePct / DAMAGE_SAT_PCT))
   const t = d * (0.35 + 0.65 * Math.exp(-((x / 7) ** 2)))
   const r = Math.round(0x9a + (0xc2 - 0x9a) * t)
   const g = Math.round(0xa2 - 0x38 * t)
@@ -56,7 +66,6 @@ export const MorbiBridge = memo(function MorbiBridge({
     tickCollapse(scenario, delta)
     const t = state.clock.elapsedTime
     const damagePct = useStore.getState().stiffness.damagePct
-    const crack = scenario === 'rupture' ? 1 : 0
 
     for (let i = 0; i < SEGS; i++) {
       const x = deckX(i)
@@ -67,21 +76,26 @@ export const MorbiBridge = memo(function MorbiBridge({
       const webB = webRefs.current[i * 2 + 1]
       if (top) top.position.set(x, y + BRIDGE.deckH / 2, 0)
       if (bot) bot.position.set(x, y - BRIDGE.deckH / 2, 0)
+      // Web twist follows the flexing cascade so recovery ramps it back to 0
+      // smoothly (gating on scenario alone would snap it the instant the arc
+      // leaves 'rupture').
+      const twist = 0.012 * Math.sin(t * 2.0) * collapseState.cascade
       if (webA) {
         webA.position.set(x, y, WEB_X)
-        webA.rotation.z = 0.012 * Math.sin(t * 2.0) * crack
+        webA.rotation.z = twist
       }
       if (webB) {
         webB.position.set(x, y, -WEB_X)
-        webB.rotation.z = -0.012 * Math.sin(t * 2.0) * crack
+        webB.rotation.z = -twist
       }
       // per-frame damage heat tint (reads the overlay, no re-render)
       const mat = matRefs.current[i]
       if (mat) mat.color.set(segColor(x, damagePct))
     }
 
-    // pier sway follows the deck so the bearing interface never detaches
-    const sway = 0.02 * Math.sin(t * 2.0) * crack
+    // Pier sway follows the deck so the bearing interface never detaches; gated
+    // on cascade so it fades out during recovery instead of snapping flat.
+    const sway = 0.02 * Math.sin(t * 2.0) * collapseState.cascade
     if (pierARef.current) pierARef.current.rotation.z = sway
     if (pierBRef.current) pierBRef.current.rotation.z = -sway
   })

@@ -61,7 +61,7 @@ def clean_quadrant(mask: np.ndarray) -> tuple[int, int] | None:
     return None
 
 
-def build_split(split: str) -> int:
+def build_split(split: str) -> tuple[int, int]:
     img_src = SRC / "images" / split
     lbl_src = SRC / "labels" / split
     for sub in ("images", "labels"):
@@ -76,7 +76,13 @@ def build_split(split: str) -> int:
         for src, dst in ((im, OUT / "images" / split / im.name),
                          (lbl, OUT / "labels" / split / lbl.name)):
             if not dst.exists():
-                os.link(src, dst)
+                # ROADMAP line 66: hardlinks fail on some filesystems (cross-
+                # volume, FAT, APFS/ReFS) — fall back to a real copy.
+                try:
+                    os.link(src, dst)
+                except OSError:
+                    import shutil
+                    shutil.copy2(src, dst)
         n_pos += 1
 
     # 2) crop a clean quadrant from each image whose label allows it

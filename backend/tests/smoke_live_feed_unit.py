@@ -13,8 +13,10 @@ depends on, WITHOUT the intermittent public broker:
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 BACKEND = Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
@@ -70,6 +72,14 @@ def test_adapt_namespaces():
         check("MSU RMS X honest tags",
               payload.get("bridge") == "live-demo"
               and payload.get("source") == "public-mosquitto")
+        # ROADMAP line 37: the live-demo row is a deliberately THIN rms-only row
+        # (fs=0, samples=[]) — the bridge-parameterised validator accepts it; the
+        # hero default rejects it (documented, not a silent contract violation).
+        check("live-demo row passes validate_accel(bridge='live-demo')",
+              contract.validate_accel(payload, bridge="live-demo") == [],
+              str(contract.validate_accel(payload, bridge="live-demo")))
+        check("hero validate_accel (default) rejects the thin row (documented)",
+              len(contract.validate_accel(payload)) > 0)
 
     # MSU RMS Z -> node 3
     evs = feed._adapt("MSU/Accelerometer/RMS/Z/LOC_MSU-0000002", {"value": 1.25})
@@ -132,8 +142,9 @@ def test_recorder_pattern_isolation():
 
     # a live-demo accel event persists via the live recorder only
     bus.publish("bridge/live-demo/accel",
-                {"bridge": "live-demo", "node": 1, "ts": 100.0, "rms": 0.0045,
-                 "flag": 0, "source": "public-mosquitto"})
+                {"bridge": "live-demo", "node": 1, "ts": 100.0, "fs": 0,
+                 "samples": [], "rms": 0.0045, "flag": 0,
+                 "source": "public-mosquitto"})
     check("live accel persisted to live store", len(live_store.rms) == 1)
     check("live accel NOT in hero store", len(hero_store.rms) == 0)
     if live_store.rms:
@@ -142,7 +153,8 @@ def test_recorder_pattern_isolation():
 
     # a hero z24 accel event must stay in the hero store (arc untouched)
     bus.publish("bridge/z24/accel",
-                {"bridge": "z24", "node": 6, "ts": 101.0, "rms": 0.02, "flag": 0})
+                {"bridge": "z24", "node": 6, "ts": 101.0, "fs": 100,
+                 "samples": [0.02] * 100, "rms": 0.02, "flag": 0})
     check("hero z24 persisted to hero store", len(hero_store.rms) == 1)
     check("hero z24 NOT in live store", len(live_store.rms) == 1)
 
@@ -155,10 +167,116 @@ def test_recorder_pattern_isolation():
     bus.unsubscribe(live_token)
 
 
+def test_recorder_validates():
+    """ROADMAP line 38 — the recorder is the ingestion boundary: bridge-aware
+    validation, log-and-drop (never raise), the stream keeps flowing."""
+    print("== recorder ingestion validation (log-and-drop) ==")
+    bus = events.get_bus()
+    cfg = Settings()
+    hero_store = db.MemoryStore(bridge="z24")
+    live_store = db.MemoryStore(bridge="live-demo")
+    hero_token = db.attach_recorder(cfg, bus, hero_store)            # bridge/z24/#
+    live_token = db.attach_recorder(cfg, bus, live_store, pattern="bridge/live-demo/#")
+
+    def hero_row(**over):
+        row = {"bridge": "z24", "node": 6, "ts": 200.0, "fs": 100,
+               "samples": [0.01] * 100, "rms": 0.01, "flag": 0, "msg_id": "t"}
+        row.update(over)
+        return row
+
+    # valid hero row persists
+    bus.publish("bridge/z24/accel", hero_row())
+    check("valid hero accel persisted", len(hero_store.rms) == 1)
+    # invalid hero rows: wrong bridge / wrong fs / wrong sample length -> DROPPED
+    bus.publish("bridge/z24/accel", hero_row(bridge="other"))
+    bus.publish("bridge/z24/accel", hero_row(fs=99))
+    bus.publish("bridge/z24/accel", hero_row(samples=[0.01] * 50))
+    bus.publish("bridge/z24/accel", hero_row(samples="garbage"))
+    check("wrong bridge dropped", len(hero_store.rms) == 1)
+    check("wrong fs dropped", len(hero_store.rms) == 1)
+    check("wrong sample length dropped", len(hero_store.rms) == 1)
+    check("non-list samples dropped", len(hero_store.rms) == 1)
+
+    # valid live-demo thin row persists on its own recorder
+    bus.publish("bridge/live-demo/accel",
+                {"bridge": "live-demo", "node": 1, "ts": 201.0, "fs": 0,
+                 "samples": [], "rms": 0.0045, "flag": 0, "source": "public-mosquitto"})
+    check("valid live-demo thin row persisted", len(live_store.rms) == 1)
+    # invalid live-demo rows: bad rms / non-zero fs -> DROPPED
+    bus.publish("bridge/live-demo/accel", {"bridge": "live-demo", "node": 1,
+                                           "ts": 202.0, "fs": 0, "samples": [],
+                                           "rms": "junk", "flag": 0})
+    bus.publish("bridge/live-demo/accel", {"bridge": "live-demo", "node": 1,
+                                           "ts": 203.0, "fs": 100, "samples": [0.0],
+                                           "rms": 0.005, "flag": 0})
+    check("live-demo bad rms dropped", len(live_store.rms) == 1)
+    check("live-demo non-thin fs/samples dropped", len(live_store.rms) == 1)
+
+    # bhi: valid persists, out-of-range / NaN dropped
+    def bhi_row(**over):
+        row = {"bridge": "z24", "ts": 204.0, "bhi": 87.1, "u": 0.2,
+               "cv": 0.1, "vib": 0.1, "load": 0.1, "state": "GREEN"}
+        row.update(over)
+        return row
+
+    bus.publish("bridge/z24/bhi", bhi_row())
+    check("valid bhi persisted", len(hero_store.bhi) == 1)
+    bus.publish("bridge/z24/bhi", bhi_row(bhi=150.0))
+    bus.publish("bridge/z24/bhi", bhi_row(bhi=float("nan")))
+    bus.publish("bridge/z24/bhi", bhi_row(bhi="abc"))
+    check("bhi out-of-range dropped", len(hero_store.bhi) == 1)
+    check("bhi NaN dropped", len(hero_store.bhi) == 1)
+    check("bhi non-numeric dropped", len(hero_store.bhi) == 1)
+
+    bus.unsubscribe(hero_token)
+    bus.unsubscribe(live_token)
+
+
+def test_rate_cap():
+    """ROADMAP line 91 — per-source-topic rate cap: a bursting topic is capped
+    to one publish per rate_cap_s while distinct topics never wait. Driven
+    through the REAL _on_message with a monkeypatched contract.now so the
+    window arithmetic is deterministic (no real sleeps)."""
+    print("== per-topic rate cap ==")
+    feed = LiveFeed(_FakeBus(), rate_cap_s=1.0)
+
+    def msg(topic, val):
+        return SimpleNamespace(topic=topic, payload=json.dumps({"value": val}).encode())
+
+    orig_now = contract.now
+    t = [1000.0]
+    contract.now = lambda: t[0]
+    try:
+        z = "MSU/Accelerometer/RMS/Z/LOC_MSU-A1"
+        feed._on_message(None, None, msg(z, 0.042))
+        feed._on_message(None, None, msg(z, 0.043))  # same topic, same second
+        check("same-topic burst capped at 1 publish", feed.published == 1)
+        check("rate-limited skips counted", feed.rate_limited == 1)
+        t[0] += 1.5  # advance past the window
+        feed._on_message(None, None, msg(z, 0.044))
+        check("topic publishes again after the window", feed.published == 2)
+        feed._on_message(None, None, msg("MSU/Temperature/1", 21.0))
+        check("distinct topic publishes immediately", feed.published == 3)
+        check("distinct topic not counted rate-limited", feed.rate_limited == 1)
+        check("status surfaces rate_limited + cap",
+              feed.status().get("rate_limited") == 1
+              and feed.status().get("rate_cap_s") == 1.0)
+        # rate_cap_s=0 disables the cap entirely
+        feed0 = LiveFeed(_FakeBus(), rate_cap_s=0)
+        feed0._on_message(None, None, msg(z, 0.1))
+        feed0._on_message(None, None, msg(z, 0.2))
+        check("rate_cap_s=0 disables the cap", feed0.published == 2
+              and feed0.rate_limited == 0)
+    finally:
+        contract.now = orig_now
+
+
 def main():
     test_adapt_namespaces()
     test_num()
+    test_rate_cap()
     test_recorder_pattern_isolation()
+    test_recorder_validates()
     print()
     print(f"{'=' * 48}")
     print(f" live-feed unit: {PASS} passed, {FAIL} failed")

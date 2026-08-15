@@ -32,7 +32,7 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-import cv2  # noqa: F401 (imported for side effects / presence check)
+import cv2  # genuinely used: imread/imwrite/resize/cvtColor/Canny/polylines
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = REPO_ROOT / "data" / "cv" / "yolo"
@@ -94,16 +94,20 @@ def make_crack_image(size: int = 256, seed: int = 0) -> tuple[np.ndarray, np.nda
     rng = np.random.default_rng(seed)
     img = _concrete_base(size, rng)
     mask = np.zeros((size, size), dtype=np.uint8)
+    dark = np.zeros((size, size), dtype=np.uint8)
     poly = _random_crack_polyline(size, rng)
     thick = int(rng.integers(2, 5))
     cv2.polylines(mask, [poly], False, 255, thickness=thick)
-    # a couple of short branches
+    cv2.polylines(dark, [poly], False, 255, thickness=thick)
+    # a couple of short branches — ROADMAP line 66: draw them into `dark` too,
+    # so the shading the image shows matches the mask/label (previously only the
+    # main polyline was darkened and the label promised branches the image hid).
     for _ in range(rng.integers(0, 3)):
         bp = _random_crack_polyline(size, rng)[:3]
-        cv2.polylines(mask, [bp], False, 160, thickness=max(1, thick - 1))
+        t = max(1, thick - 1)
+        cv2.polylines(mask, [bp], False, 255, thickness=t)
+        cv2.polylines(dark, [bp], False, 255, thickness=t)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
-    dark = np.zeros((size, size), dtype=np.uint8)
-    cv2.polylines(dark, [poly], False, 255, thickness=thick)
     crack_shade = np.clip(img - 45, 0, 255)
     img = np.where(dark > 0, crack_shade, img)   # dark is 2D -> keeps img 2D
     img = cv2.GaussianBlur(img, (3, 3), 0)
@@ -163,6 +167,15 @@ def download(url: str, dest: Path, timeout: int = 240) -> Path:
     return dest
 
 
+def _zip_ok(zip_path: Path) -> bool:
+    """CRC-verify a downloaded zip (rejects truncated/corrupt downloads)."""
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            return zf.testzip() is None
+    except Exception:
+        return False
+
+
 def convert_ultralytics_crack_seg(zip_path: Path, out: Path) -> Path:
     """Extract crack-seg.zip (already YOLO-seg) and merge into <out>."""
     with zipfile.ZipFile(zip_path) as zf:
@@ -192,36 +205,64 @@ def convert_ultralytics_crack_seg(zip_path: Path, out: Path) -> Path:
 
 
 def convert_sdnet(sdnet_root: Path, out: Path, val_frac: float = 0.2) -> Path:
-    """SDNET2018 (classification-only) -> approximate YOLO-seg crack labels."""
-    import re
+    """SDNET2018 (classification-only) -> approximate YOLO-seg crack labels.
+
+    Cracked images become positives (approximate polygon masks); Uncracked
+    images become NEGATIVES (image written, empty label file) so a model trained
+    on the mix learns "plain concrete = no crack" (ROADMAP line 66 — the earlier
+    version only emitted cracked positives, inheriting CrackSeg9k's FP bias).
+    """
     out = Path(out)
     for split in ("train", "val"):
         (out / "images" / split).mkdir(parents=True, exist_ok=True)
         (out / "labels" / split).mkdir(parents=True, exist_ok=True)
-    # SDNET dirs: <root>/Crack/*.png and <root>/Uncracked/*.png (or nested)
-    cracked = []
-    for pat in ("**/Cracked/*", "**/Crack/*", "**/cracked/*", "**/crack/*"):
-        cracked += sorted(Path(sdnet_root).glob(pat))
-    cracked = [p for p in cracked if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
+    # SDNET2018 real layout: {D,P,W}/{CD,CP,CW,UD,UP,UW}/*.jpg (C/U = cracked/
+    # uncracked, D/P/W = deck/pier/wall); some redistributions spell out
+    # Crack/Uncracked. Match both.
+    def _gather(patterns: list[str]) -> list[Path]:
+        hits = []
+        for pat in patterns:
+            hits += sorted(Path(sdnet_root).glob(pat))
+        return [p for p in hits if p.suffix.lower() in (".png", ".jpg", ".jpeg")]
+    cracked = _gather(["**/Cracked/*", "**/Crack/*", "**/cracked/*", "**/crack/*",
+                       "**/CD/*", "**/CP/*", "**/CW/*"])
     if not cracked:
         raise FileNotFoundError(f"no SDNET cracked images under {sdnet_root} "
-                                f"(expected <root>/Crack/*.png). Download from {SDNET_PAGE}.")
+                                f"(expected <root>/{'{D,P,W}'}/{'{CD,CP,CW,UD,UP,UW}'}"
+                                f" or Crack/Uncracked). Download from {SDNET_PAGE}.")
+    uncracked = _gather(["**/Uncracked/*", "**/uncracked/*", "**/NC/*",
+                         "**/UD/*", "**/UP/*", "**/UW/*"])
     rng = np.random.default_rng(0)
-    for i, img_path in enumerate(cracked):
+    n_pos = n_neg = 0
+
+    def _write(img_path: Path, idx: int, positive: bool) -> None:
+        nonlocal n_pos, n_neg
         img = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
         if img is None:
-            continue
-        img = cv2.resize(img, (256, 256))
-        img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        mask = _approx_crack_mask(img, rng)
-        split = "val" if i % max(1, round(1 / val_frac)) == 0 else "train"
-        fname = f"sdnet_{i:05d}.jpg"
+            return
+        img_bgr = cv2.cvtColor(cv2.resize(img, (256, 256)), cv2.COLOR_GRAY2BGR)
+        split = "val" if rng.random() < val_frac else "train"
+        fname = f"sdnet_{idx:05d}.jpg"
         cv2.imwrite(str(out / "images" / split / fname), img_bgr)
-        lbl = _mask_to_yolo_label(mask)
-        if lbl:
-            (out / "labels" / split / f"{fname.rsplit('.', 1)[0]}.txt").write_text(lbl + "\n", encoding="utf-8")
+        if positive:
+            lbl = _mask_to_yolo_label(_approx_crack_mask(img, rng))
+            if lbl:
+                (out / "labels" / split / f"{fname.rsplit('.', 1)[0]}.txt") \
+                    .write_text(lbl + "\n", encoding="utf-8")
+            n_pos += 1
+        else:
+            # negative: empty label file teaches the "no crack" class
+            (out / "labels" / split / f"{fname.rsplit('.', 1)[0]}.txt") \
+                .write_text("", encoding="utf-8")
+            n_neg += 1
+
+    for i, p in enumerate(cracked):
+        _write(p, i, positive=True)
+    for j, p in enumerate(uncracked, start=len(cracked)):
+        _write(p, j, positive=False)
     yaml = write_data_yaml(out)
-    print(f"  [sdnet] converted {len(cracked)} images -> {out} (approximate masks)")
+    print(f"  [sdnet] converted {n_pos} cracked + {n_neg} uncracked -> {out} "
+          "(approximate masks on cracked; empty labels on uncracked)")
     return yaml
 
 
@@ -248,24 +289,41 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     out = Path(args.out)
+    if args.dataset == "synthetic":
+        generate_synthetic_crack_dataset(out, seed=args.seed)
+        return 0
+
+    if args.dataset == "sdnet":
+        if not args.sdnet_path:
+            print(f"ERROR: --sdnet-path required for SDNET2018. Manual download page:\n"
+                  f"  {SDNET_PAGE}\n"
+                  f"Rerun with --dataset synthetic for an offline dataset.",
+                  file=sys.stderr)
+            return 1
+        # ROADMAP line 66: an explicit --sdnet-path that is wrong/missing is a
+        # hard error — do NOT silently fall back to the synthetic set (which
+        # would hand the user a dataset they didn't ask for with exit 0).
+        try:
+            convert_sdnet(Path(args.sdnet_path), out)
+        except Exception as exc:
+            print(f"ERROR: SDNET conversion failed ({exc})", file=sys.stderr)
+            return 1
+        return 0
+
+    # ultralytics (network) — download failure falls back to synthetic so the
+    # training code stays exercisable offline (documented priority 3).
     try:
-        if args.dataset == "ultralytics":
-            zip_path = out.parent / "crack-seg.zip"
-            if not zip_path.exists():
-                print(f"  [net] downloading {CRACK_SEG_URL} ({zip_path}) ...")
-                download(CRACK_SEG_URL, zip_path, timeout=args.timeout)
-            return 0 if convert_ultralytics_crack_seg(zip_path, out) else 1
-        if args.dataset == "sdnet":
-            if not args.sdnet_path:
-                print(f"ERROR: --sdnet-path required for SDNET2018. Manual download page:\n"
-                      f"  {SDNET_PAGE}\n"
-                      f"Rerun with --dataset synthetic for an offline dataset.",
-                      file=sys.stderr)
-                return 1
-            return 0 if convert_sdnet(Path(args.sdnet_path), out) else 1
-        if args.dataset == "synthetic":
-            generate_synthetic_crack_dataset(out, seed=args.seed)
-            return 0
+        zip_path = out.parent / "crack-seg.zip"
+        if not zip_path.exists():
+            print(f"  [net] downloading {CRACK_SEG_URL} ({zip_path}) ...")
+            download(CRACK_SEG_URL, zip_path, timeout=args.timeout)
+        elif not _zip_ok(zip_path):
+            # ROADMAP line 66: a partial/corrupt download must not be reused.
+            print(f"  [net] {zip_path.name} failed CRC check — re-downloading")
+            zip_path.unlink()
+            download(CRACK_SEG_URL, zip_path, timeout=args.timeout)
+        convert_ultralytics_crack_seg(zip_path, out)
+        return 0
     except Exception as exc:
         print(f"  [prep] WARNING: dataset path failed ({exc}). "
               f"Falling back to a synthetic crack set so training stays exercisable.")

@@ -1,13 +1,17 @@
 """
-fusion/bhi.py — BridgeHealthIndex: transparent, auditable 3-sub-index fusion.
+fusion/bhi.py — BridgeHealthIndex: the standalone REFERENCE implementation of
+the frozen 3-sub-index fusion.
 
-Wraps the FROZEN contract formula from backend/app/contract.py:
+ROADMAP line 67: the running backend does NOT instantiate this class — it fuses
+inline via ``backend.app.contract.compute_bhi`` (backend/app/fusion.py:52,127,137)
+so the formula lives in ONE place (backend/app/contract.py, the single source of
+truth).  This class is kept as the self-contained reference implementation plus
+the scripted GREEN->AMBER->RED demo trajectory; it imports the contract verbatim
+when reachable so it can never drift from what the backend fuses with.
+
+Frozen formula (imported from backend.app.contract when reachable):
     BHI = 100 * (1 - 0.40*cv - 0.35*vib - 0.25*load) * age_factor * traffic_factor
     GREEN >= 70, AMBER in [50, 70), RED < 50
-
-The contract is imported verbatim when reachable (`backend.app.contract`); if
-it is not importable the exact formula is replicated locally so this module is
-fully standalone. Sub-indices are clamped to [0,1]; BHI is clamped to [0,100].
 
 The uncertainty `u` returned is a +/- BHI-point interval (0..20 points) mapped
 from the 0..1 model uncertainty, so the dashboard can draw an honest error bar.

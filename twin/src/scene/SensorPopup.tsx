@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { useStore } from '../store'
+import { useStore, FS_HZ, WINDOW_N } from '../store'
 import { BRIDGE, deckYAt, wobble } from './collapse'
 
 /**
@@ -82,27 +82,27 @@ export const SensorPopup = memo(function SensorPopup() {
             </div>
           </div>
           <div className="popup-chart">
-            <div className="popup-chart-title">Spectrum · 256-pt window @ 100 Hz</div>
+            <div className="popup-chart-title">Spectrum · {WINDOW_N}-pt window @ {FS_HZ} Hz</div>
             {spectrum.length > 0 ? (
               <ResponsiveContainer width="100%" height={92}>
                 <AreaChart data={chartData} margin={{ top: 4, right: 2, left: 2, bottom: 0 }}>
                   <defs>
                     <linearGradient id="specGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0d9488" stopOpacity={0.6} />
-                      <stop offset="100%" stopColor="#0d9488" stopOpacity={0.05} />
+                      <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="var(--accent)" stopOpacity={0.05} />
                     </linearGradient>
                   </defs>
                   <XAxis dataKey="k" hide />
                   <YAxis hide domain={[0, 'dataMax']} />
                   <Tooltip
-                    contentStyle={{ background: '#ffffff', border: '1px solid #cbd5e1', fontSize: 11 }}
-                    labelStyle={{ color: '#64748b' }}
+                    contentStyle={{ background: 'var(--panel)', border: '1px solid var(--border)', fontSize: 11 }}
+                    labelStyle={{ color: 'var(--muted)' }}
                     formatter={(value) => [Number(value ?? 0).toFixed(4), 'mag']}
                   />
                   <Area
                     type="monotone"
                     dataKey="v"
-                    stroke="#0d9488"
+                    stroke="var(--accent)"
                     strokeWidth={1}
                     fill="url(#specGrad)"
                     dot={false}

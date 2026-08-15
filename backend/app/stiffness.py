@@ -124,7 +124,6 @@ class StiffnessTracker:
                 f1 = _peak_f1(np.asarray(ring, dtype=float),
                               float(payload.get("fs") or self.cfg.fs))
                 if f1 > 0:
-                    self._last_seen = contract.now()
                     # Tracking gate: once the baseline is locked, reject
                     # TRANSIENT non-modal peaks (traffic bursts) that sit far
                     # from the fundamental.  A persistent damage drift is NOT
@@ -135,6 +134,11 @@ class StiffnessTracker:
                             and not (self._baseline * (1.0 - _TRACK_GATE)
                                      <= f1 <= self._baseline * (1.0 + _TRACK_GATE))):
                         return
+                    # item 14: _last_seen must only advance for ACCEPTED peaks.
+                    # It used to be set above, before the gate, so a burst of
+                    # rejected non-modal peaks kept the snapshot forever fresh
+                    # and the stale flag never tripped.
+                    self._last_seen = contract.now()
                     self._peaks.append(f1)
                     self._f1 = float(np.median(self._peaks))
                     # self-baseline: first _BASELINE_WINDOWS measurements only

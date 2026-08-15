@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { useStore } from '../store'
+import { useStore, F1_REF_HZ } from '../store'
 import type { WsStatus } from '../store'
 
 /** LIVE vs REPLAY badge — the honesty feature: every data source is labeled. */
@@ -52,7 +52,7 @@ export const StoryControls = memo(function StoryControls({
         : f1Dropped
           ? 'STIFFNESS-LOSS ARC ACTIVE · f1 falling'
           : 'VIBRATION ANOMALY · broadband signature active'
-      : `SYSTEM NOMINAL · f1 ${stiffness.f1Meas ? stiffness.f1Meas.toFixed(1) : 3.8} Hz`
+      : `SYSTEM NOMINAL · f1 ${stiffness.f1Meas ? stiffness.f1Meas.toFixed(1) : F1_REF_HZ} Hz`
 
   return (
     <div className="story-controls">

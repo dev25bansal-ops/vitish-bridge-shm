@@ -44,7 +44,8 @@ tags: [home, vitish-2026, shm]
 - ✅ **Build + integration verified** — see [[Build-Log]]
 - ✅ Real CV datasets downloaded (crack-seg 4,081 imgs → CRACK500+DeepCrack → dacl10k)
 - 🚀 **Startup pivot** — full company/YC project written → [[Company-Project]]
-- 🔜 Next build: real `crack_seg.pt` + ESP32 node + pilot LOIs
+- ✅ Real `crack_seg.pt` trained (YOLO26s-seg, 4,081 CC0 CrackSeg9k) — [[CV-Model]]
+- 🔜 Next: ESP32 node (deferred hardware) + pilot LOIs
 
 ---
 

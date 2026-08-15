@@ -3,7 +3,11 @@ VITISH 2026 · PS#99 SHM — persistence layer.
 
 Two implementations behind one ``Store`` interface:
 
-* :class:`PostgresStore` — psycopg2 against the docker-compose database.
+* :class:`PostgresStore` — psycopg2 against the docker-compose database.  Has a
+  runtime-failover latch (item 8, ROADMAP-NEXT): if Postgres dies after boot,
+  repeated write/read failures mirror into an in-memory ring and the store
+  degrades to memory instead of raising per insert; a paced reconnect resumes
+  Postgres automatically when it comes back.
 * :class:`MemoryStore`   — in-memory ring buffers + a JSON append log at
   ``app/state_cache.json`` that survives restarts.
 
@@ -14,7 +18,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional
@@ -27,6 +33,8 @@ log = logging.getLogger(__name__)
 _MAX_SERIES = 8192        # accel / bhi points kept in memory
 _MAX_ALERTS = 512
 _CACHE_MAX_LINES = 20000  # compact the JSON log beyond this
+_DEGRADE_AFTER = 3        # consecutive Postgres failures before latching to memory
+_RECONNECT_EVERY = 10.0   # seconds between reconnect attempts once degraded
 
 
 def _clamp(v, lo=0.0, hi=1.0):
@@ -97,6 +105,16 @@ class PostgresStore(Store):
 
     def __init__(self, dsn: str, create_tables: bool = True) -> None:
         import psycopg2  # local import: only needed when Postgres is used
+        self._dsn = dsn
+        # Runtime-failover ring (item 8, ROADMAP-NEXT): on repeated write/read
+        # failure we latch to this in-memory ring so persistence degrades to
+        # memory instead of raising per insert; a paced reconnect resumes
+        # Postgres when it comes back.  Honest: the ring is bounded and volatile.
+        self._ring = MemoryStore(bridge=contract.BRIDGE_ID)
+        self._failures = 0
+        self._degraded = False
+        self._last_reconnect_attempt = 0.0
+        self._pg_lock = threading.RLock()  # guards conn swap + persist attempts
         self.conn = psycopg2.connect(dsn, connect_timeout=3)
         self.conn.autocommit = True
         if create_tables:
@@ -104,72 +122,172 @@ class PostgresStore(Store):
                 cur.execute(self._SCHEMA)
         log.info("Postgres store ready")
 
+    # -- runtime-failover machinery -------------------------------------------
+    def _mark_ok(self) -> None:
+        self._failures = 0
+
+    def _mark_failed(self, exc: Exception) -> None:
+        with self._pg_lock:
+            self._failures += 1
+            if self._failures >= _DEGRADE_AFTER and not self._degraded:
+                self._degraded = True
+                self._last_reconnect_attempt = time.monotonic()
+                log.error(
+                    "Postgres persistence failing (%s) — DEGRADED to in-memory ring; "
+                    "reconnect attempts continue every %.0fs", exc, _RECONNECT_EVERY)
+
+    def _maybe_reconnect(self) -> None:
+        """Paced reconnect attempt while degraded; resumes Postgres on success."""
+        now = time.monotonic()
+        if now - self._last_reconnect_attempt < _RECONNECT_EVERY:
+            return
+        self._last_reconnect_attempt = now
+        try:
+            import psycopg2
+            newconn = psycopg2.connect(self._dsn, connect_timeout=3)
+            newconn.autocommit = True
+            with newconn.cursor() as cur:
+                cur.execute(self._SCHEMA)
+        except Exception as exc:
+            log.warning("Postgres still down after reconnect: %s", exc)
+            return
+        with self._pg_lock:
+            old = self.conn
+            self.conn = newconn
+            self._failures = 0
+            self._degraded = False
+        try:
+            old.close()
+        except Exception:
+            pass
+        log.info("Postgres store reconnected — persistence resumed")
+
     def _exec(self, sql: str, params: tuple) -> None:
-        with self.conn.cursor() as cur:
-            cur.execute(sql, params)
-
-    def insert_accel(self, node, ts, rms, flag, bridge=None) -> None:
-        self._exec(
-            "INSERT INTO accel (bridge, node, ts, rms, flag) VALUES (%s,%s,%s,%s,%s)",
-            (bridge or contract.BRIDGE_ID, int(node), float(ts), float(rms), int(flag)),
-        )
-
-    def insert_bhi(self, ts, bhi, u, cv, vib, load, state, bridge=None) -> None:
-        self._exec(
-            "INSERT INTO bhi (bridge, ts, bhi, u, cv, vib, load, state) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (bridge or contract.BRIDGE_ID, float(ts), float(bhi), float(u),
-             float(cv), float(vib), float(load), str(state)),
-        )
-
-    def insert_alert(self, ts, severity, source, text, recommendation, bridge=None) -> None:
-        self._exec(
-            "INSERT INTO alerts (bridge, ts, severity, source, text, recommendation) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
-            (bridge or contract.BRIDGE_ID, float(ts), str(severity), str(source),
-             str(text), str(recommendation)),
-        )
+        with self._pg_lock:
+            with self.conn.cursor() as cur:
+                cur.execute(sql, params)
 
     def _query(self, sql: str, params: tuple, limit: int):
-        with self.conn.cursor() as cur:
-            cur.execute(sql + " LIMIT %s", params + (limit,))
-            return cur.fetchall()
+        with self._pg_lock:
+            with self.conn.cursor() as cur:
+                cur.execute(sql + " LIMIT %s", params + (limit,))
+                return cur.fetchall()
+
+    def insert_accel(self, node, ts, rms, flag, bridge=None) -> None:
+        if self._degraded:
+            self._ring.insert_accel(node, ts, rms, flag, bridge=bridge)
+            self._maybe_reconnect()
+            return
+        try:
+            self._exec(
+                "INSERT INTO accel (bridge, node, ts, rms, flag) VALUES (%s,%s,%s,%s,%s)",
+                (bridge or contract.BRIDGE_ID, int(node), float(ts), float(rms), int(flag)),
+            )
+            self._mark_ok()
+        except Exception as exc:
+            self._ring.insert_accel(node, ts, rms, flag, bridge=bridge)
+            self._mark_failed(exc)
+
+    def insert_bhi(self, ts, bhi, u, cv, vib, load, state, bridge=None) -> None:
+        if self._degraded:
+            self._ring.insert_bhi(ts, bhi, u, cv, vib, load, state, bridge=bridge)
+            self._maybe_reconnect()
+            return
+        try:
+            self._exec(
+                "INSERT INTO bhi (bridge, ts, bhi, u, cv, vib, load, state) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (bridge or contract.BRIDGE_ID, float(ts), float(bhi), float(u),
+                 float(cv), float(vib), float(load), str(state)),
+            )
+            self._mark_ok()
+        except Exception as exc:
+            self._ring.insert_bhi(ts, bhi, u, cv, vib, load, state, bridge=bridge)
+            self._mark_failed(exc)
+
+    def insert_alert(self, ts, severity, source, text, recommendation, bridge=None) -> None:
+        if self._degraded:
+            self._ring.insert_alert(ts, severity, source, text, recommendation, bridge=bridge)
+            self._maybe_reconnect()
+            return
+        try:
+            self._exec(
+                "INSERT INTO alerts (bridge, ts, severity, source, text, recommendation) "
+                "VALUES (%s,%s,%s,%s,%s,%s)",
+                (bridge or contract.BRIDGE_ID, float(ts), str(severity), str(source),
+                 str(text), str(recommendation)),
+            )
+            self._mark_ok()
+        except Exception as exc:
+            self._ring.insert_alert(ts, severity, source, text, recommendation, bridge=bridge)
+            self._mark_failed(exc)
+
+    def _read_ring(self, method: str, *args) -> list:
+        return getattr(self._ring, method)(*args)
 
     def recent_rms(self, bridge, limit=120) -> List[dict]:
-        rows = self._query(
-            "SELECT ts, node, rms, flag FROM accel WHERE bridge=%s ORDER BY ts DESC",
-            (bridge,), max(limit, 1),
-        )
-        return [{"ts": r[0], "node": r[1], "rms": r[2], "flag": r[3]}
-                for r in reversed(rows)]
+        if self._degraded:
+            self._maybe_reconnect()
+            return self._read_ring("recent_rms", bridge, limit)
+        try:
+            rows = self._query(
+                "SELECT ts, node, rms, flag FROM accel WHERE bridge=%s ORDER BY ts DESC",
+                (bridge,), max(limit, 1),
+            )
+            return [{"ts": r[0], "node": r[1], "rms": r[2], "flag": r[3]}
+                    for r in reversed(rows)]
+        except Exception as exc:
+            self._mark_failed(exc)
+            return self._read_ring("recent_rms", bridge, limit)
 
     def recent_bhi(self, bridge, limit=120) -> List[dict]:
-        rows = self._query(
-            "SELECT ts, bhi, u, cv, vib, load, state FROM bhi WHERE bridge=%s "
-            "ORDER BY ts DESC",
-            (bridge,), max(limit, 1),
-        )
-        return [{"ts": r[0], "bhi": r[1], "u": r[2], "cv": r[3], "vib": r[4],
-                 "load": r[5], "state": r[6]} for r in reversed(rows)]
+        if self._degraded:
+            self._maybe_reconnect()
+            return self._read_ring("recent_bhi", bridge, limit)
+        try:
+            rows = self._query(
+                "SELECT ts, bhi, u, cv, vib, load, state FROM bhi WHERE bridge=%s "
+                "ORDER BY ts DESC",
+                (bridge,), max(limit, 1),
+            )
+            return [{"ts": r[0], "bhi": r[1], "u": r[2], "cv": r[3], "vib": r[4],
+                     "load": r[5], "state": r[6]} for r in reversed(rows)]
+        except Exception as exc:
+            self._mark_failed(exc)
+            return self._read_ring("recent_bhi", bridge, limit)
 
     def recent_alerts(self, bridge, limit=50) -> List[dict]:
-        rows = self._query(
-            "SELECT ts, severity, source, text, recommendation FROM alerts "
-            "WHERE bridge=%s ORDER BY ts DESC",
-            (bridge,), max(limit, 1),
-        )
-        return [{"ts": r[0], "severity": r[1], "source": r[2], "text": r[3],
-                 "recommendation": r[4]} for r in reversed(rows)]
+        if self._degraded:
+            self._maybe_reconnect()
+            return self._read_ring("recent_alerts", bridge, limit)
+        try:
+            rows = self._query(
+                "SELECT ts, severity, source, text, recommendation FROM alerts "
+                "WHERE bridge=%s ORDER BY ts DESC",
+                (bridge,), max(limit, 1),
+            )
+            return [{"ts": r[0], "severity": r[1], "source": r[2], "text": r[3],
+                     "recommendation": r[4]} for r in reversed(rows)]
+        except Exception as exc:
+            self._mark_failed(exc)
+            return self._read_ring("recent_alerts", bridge, limit)
 
     def current_state(self, bridge) -> dict:
-        bhi = self._query(
-            "SELECT ts, bhi, u, cv, vib, load, state FROM bhi WHERE bridge=%s "
-            "ORDER BY ts DESC", (bridge,), 1,
-        )
-        rms = self._query(
-            "SELECT node, rms, flag FROM accel WHERE bridge=%s ORDER BY ts DESC",
-            (bridge,), 100,
-        )
+        if self._degraded:
+            self._maybe_reconnect()
+            return self._ring.current_state(bridge)
+        try:
+            bhi = self._query(
+                "SELECT ts, bhi, u, cv, vib, load, state FROM bhi WHERE bridge=%s "
+                "ORDER BY ts DESC", (bridge,), 1,
+            )
+            rms = self._query(
+                "SELECT node, rms, flag FROM accel WHERE bridge=%s ORDER BY ts DESC",
+                (bridge,), 100,
+            )
+        except Exception as exc:
+            self._mark_failed(exc)
+            return self._ring.current_state(bridge)
         nodes: Dict[str, dict] = {}
         seen: set = set()
         for node, r, flag in rms:  # keep last per node
@@ -343,6 +461,12 @@ def get_store(cfg: Settings, prefer: str = "auto") -> Store:
     with _store_lock:
         if _store is not None:
             return _store
+        if not cfg.db_dsn:
+            # No configured credential (ROADMAP line 92): Postgres is opt-in via
+            # VITISH_DB_DSN; empty -> MemoryStore without a doomed connect attempt.
+            log.warning("db_dsn empty (set VITISH_DB_DSN to enable Postgres) -> MemoryStore")
+            _store = MemoryStore(bridge=cfg.bridge_id, cache_path=cfg.state_cache_path)
+            return _store
         if prefer == "postgres":
             _store = PostgresStore(cfg.db_dsn)
             return _store
@@ -368,30 +492,62 @@ def attach_recorder(cfg: Settings, bus, store: Store, pattern: Optional[str] = N
     e.g. ``bridge/live-demo/#`` to also record the live public-broker feed into
     the same store (tagged ``bridge='live-demo'``).
     Returns the bus token so the caller can unsubscribe on shutdown.
+
+    Ingestion boundary (ROADMAP line 38): accel rows are validated against the
+    frozen contract at the recorder — bridge-aware (hero rows need fs=100 + 100
+    samples; live-demo rows are the documented thin RMS-only form).  Invalid
+    rows are logged and DROPPED (never raise — the stream keeps flowing).
     """
+    def _accel_row_valid(payload: dict, bridge: str) -> bool:
+        errors = contract.validate_accel(payload, bridge=bridge)
+        if errors:
+            log.warning("recorder dropped invalid accel row (bridge=%s): %s",
+                        bridge, "; ".join(errors))
+            return False
+        return True
+
     def on_event(topic: str, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
+        # The recorder subscribes to a bridge-scoped pattern, so the topic
+        # itself names the bridge: bridge/<id>/accel|bhi|alert.  Validate and
+        # persist under THAT id — a row claiming a different bridge on this
+        # topic is inconsistent and must be dropped (ROADMAP line 38).
+        parts = topic.split("/")
+        bridge = parts[1] if len(parts) > 1 and parts[0] == "bridge" else cfg.bridge_id
+        # live-demo /telemetry envelopes fall through to here deliberately: they
+        # are unvetted third-party scalars and are NOT persisted (ROADMAP line 91
+        # decision — the thin live-demo /accel rows already prove ingestion).
         try:
             if topic.endswith("/accel"):
+                if not _accel_row_valid(payload, bridge):
+                    return
                 store.insert_accel(
                     node=payload.get("node"), ts=payload.get("ts"),
                     rms=payload.get("rms"), flag=payload.get("flag"),
-                    bridge=payload.get("bridge", cfg.bridge_id),
+                    bridge=bridge,
                 )
             elif topic.endswith("/bhi"):
+                bhi = payload.get("bhi")
+                try:
+                    bhi_ok = math.isfinite(float(bhi)) and 0.0 <= float(bhi) <= 100.0
+                except (TypeError, ValueError):
+                    bhi_ok = False
+                if not bhi_ok:
+                    log.warning("recorder dropped invalid bhi row: bhi=%r", bhi)
+                    return
                 store.insert_bhi(
                     ts=payload.get("ts"), bhi=payload.get("bhi"), u=payload.get("u"),
                     cv=payload.get("cv"), vib=payload.get("vib"),
                     load=payload.get("load"), state=payload.get("state"),
-                    bridge=payload.get("bridge", cfg.bridge_id),
+                    bridge=bridge,
                 )
             elif topic.endswith("/alert"):
                 store.insert_alert(
                     ts=payload.get("ts"), severity=payload.get("severity"),
                     source=payload.get("source"), text=payload.get("text"),
                     recommendation=payload.get("recommendation", ""),
-                    bridge=payload.get("bridge", cfg.bridge_id),
+                    bridge=bridge,
                 )
         except Exception:
             log.exception("recorder failed on %s", topic)

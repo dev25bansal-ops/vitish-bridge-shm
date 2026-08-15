@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Optional
 
 # launch bootstrap (works from repo root or backend/)
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
@@ -36,6 +37,7 @@ from app import fusion as fusion_mod  # noqa: E402
 from app import stiffness as stiffness_mod  # noqa: E402
 from app import mqtt_client  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
+from app import edge_node as edge_mod  # noqa: E402
 
 log = logging.getLogger("run_all")
 
@@ -56,6 +58,7 @@ def _banner(cfg: Settings, store, sim: sim_mod.Simulator, demo: bool,
     print(f"    /api/live              (live MQTT feed status — with --live)")
     print(f"    /api/manifest           (D1-5 data-realism manifest)")
     print(f"    /api/bridge/{cfg.bridge_id}/history?metric=bhi|rms")
+    print(f"    /api/bridge/{cfg.bridge_id}/alerts?limit=N")
     print(f"    /api/bridge/{cfg.bridge_id}/state")
     print(f"    POST /api/demo/scenario  {{\"scenario\": \"healthy|rupture\"}}")
     print(f" Persistence     : {getattr(store, 'source', 'postgres')}")
@@ -67,6 +70,11 @@ def _banner(cfg: Settings, store, sim: sim_mod.Simulator, demo: bool,
     else:
         live_status = ""
     print(f" Live MQTT feed  : {'ENABLED (' + live_status + ')' if live else 'disabled (--live)'}")
+    edge_st = edge_mod.get_edge_status()
+    if edge_st is not None:
+        et = "ONLINE" if edge_st["online"] else "waiting for node"
+        print(f" Edge node       : bridge={edge_mod.EDGE_BRIDGE} {et} "
+              f"({edge_st['received']} rx)  [real {edge_st['hardware']}]")
     print(f" Demo driver     : {'ENABLED (speed %.2fx)' % settings.demo_speed if demo else 'disabled'}")
     print(line, flush=True)
 
@@ -113,19 +121,35 @@ def main(argv=None) -> int:
 
     recorder_token = db.attach_recorder(cfg, bus, store)
 
+    # --- real ESP32 edge node (bridge='esp32-1') -------------------------------
+    # Always-on: cheap bus subscriber; shows OFFLINE until the board streams.
+    edge = edge_mod.EdgeNodeMonitor(bus)
+    edge_mod.set_edge_monitor(edge)
+    edge.start()
+    edge_recorder_token = db.attach_recorder(cfg, bus, store,
+                                             pattern=f"bridge/{edge_mod.EDGE_BRIDGE}/#")
+    log.info("edge node monitor ENABLED — bridge='%s' (real ESP32)", edge_mod.EDGE_BRIDGE)
+
     if live:
         live_feed = live_mod.LiveFeed(bus)
         live_mod.set_live_feed(live_feed)
         live_feed.start()
         # persist live accel rows too, tagged bridge='live-demo' (source tag in
         # the payload is the honest provenance marker; never fused into z24 BHI)
+        # Persistence decision (ROADMAP line 91): the /telemetry envelopes are
+        # deliberately NOT persisted — public-broker values are unvetted
+        # third-party scalars, and the thin /accel rows already prove ingestion;
+        # nothing consumes stored live telemetry today. The WS bridge likewise
+        # does NOT forward bridge/live-demo/# (the twin reads live status via
+        # REST /api/live).
         live_recorder_token = db.attach_recorder(cfg, bus, store,
                                                  pattern="bridge/live-demo/#")
         log.info("live feed ENABLED — bridge='live-demo' source='public-mosquitto'")
     else:
         live_mod.set_live_feed(None)
 
-    ws = ws_mod.WSBridge(cfg, bus, scenario=args.scenario)
+    ws = ws_mod.WSBridge(cfg, bus, scenario=args.scenario, store=store)
+    ws_mod.set_current_bridge(ws)
     ws.start()
     ws_port = cfg.ws_port
     for _ in range(40):  # wait for the ws bridge to bind (may fall back to a free port)
@@ -167,7 +191,8 @@ def main(argv=None) -> int:
         print("\nshutting down backend stack...")
     finally:
         _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher,
-                  bus, recorder_token, live_feed, live_recorder_token)
+                  bus, recorder_token, live_feed, live_recorder_token,
+                  edge_recorder_token, edge)
     return 0
 
 
@@ -192,8 +217,14 @@ def _run_api(cfg: Settings):
     import uvicorn
     host = cfg.api_host
     port = cfg.api_port
-    if not _probe_port(host, port):
-        alt = _find_free_port(host, port + 1)
+    # Probe/find on loopback even when binding on 0.0.0.0: a local listener
+    # (0.0.0.0:8000 included) is always reachable via 127.0.0.1, whereas a
+    # connect() to 0.0.0.0 as a *destination* silently reports "free" on
+    # Windows — which used to send us straight into an EADDRINUSE bind failure
+    # (ROADMAP line 90: e2e then polled a stale backend on the claimed port).
+    probe_host = "127.0.0.1"
+    if not _probe_port(probe_host, port):
+        alt = _find_free_port(probe_host, port + 1)
         if alt is None:
             log.error("API: no free port near %d", port)
             return None, None
@@ -208,16 +239,21 @@ def _run_api(cfg: Settings):
         # wait until the server is actually serving
         for _ in range(100):
             if server.started:
+                api_mod.set_api_port(port)
                 return server, port
             time.sleep(0.05)
-        return server, port
+        # bind failed (e.g. port raced away after the probe); returning a
+        # "server" here let the banner claim a port that serves nothing
+        log.error("API failed to bind %s:%d — server did not start", host, port)
+        return None, None
     except Exception as exc:
         log.exception("API failed to start: %s", exc)
         return None, None
 
 
 def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
-              recorder_token, live_feed=None, live_recorder_token=None) -> None:
+              recorder_token, live_feed=None, live_recorder_token=None,
+              edge_recorder_token=None, edge=None) -> None:
     sim.stop()
     if driver is not None:
         driver.stop()
@@ -227,6 +263,10 @@ def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
     bus.unsubscribe(recorder_token)
     if live_recorder_token is not None:
         bus.unsubscribe(live_recorder_token)
+    if edge_recorder_token is not None:
+        bus.unsubscribe(edge_recorder_token)
+    if edge is not None:
+        edge.stop()
     if live_feed is not None:
         live_feed.stop()
     subscriber.stop()

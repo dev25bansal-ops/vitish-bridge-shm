@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- VITISH SHM mark: a bridge arch (accent teal) with deck (green) and a
+       monitored-node dot (red) on the dark HUD background.  Identical palette
+       to twin/src/lib/theme.ts STATE_COLORS + ACCENT. -->
+  <rect width="32" height="32" rx="7" fill="#0f172a"/>
+  <circle cx="16" cy="5" r="1.8" fill="#dc2626"/>
+  <path d="M6.5 25 L25.5 25" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M9 25 Q16 10 23 25" fill="none" stroke="#0d9488" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

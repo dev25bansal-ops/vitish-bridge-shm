@@ -33,17 +33,20 @@ ROOT = BACKEND.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Pin the deterministic floor: trained weights (if present locally) must not
-# change this gate's expectations — the arc is defined on the always-on floor.
-import models.vibration.demo_predictor as _dp  # noqa: E402
-_dp.trained_push = lambda window, fs=100: 0.0  # noqa: E731
-
 from app import contract, db, events  # noqa: E402
 from app.anomaly import reset_anomaly_baseline  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.fusion import FusionService  # noqa: E402
 from app.mqtt_client import Publisher  # noqa: E402
 from app.simulator import SyntheticPlayer  # noqa: E402
+
+# Pin the deterministic floor: trained weights (if present locally) must not
+# change this gate's expectations — the arc is defined on the always-on floor.
+# ROADMAP line 58: the patch is scoped INSIDE the test function and restored in
+# a finally, so importing this module never mutates the process-global
+# demo_predictor.trained_push (pytest-safe / order-independent).
+import models.vibration.demo_predictor as _dp  # noqa: E402
+_ORIG_TRAINED_PUSH = _dp.trained_push
 
 PASS = 0
 FAIL = 0
@@ -108,6 +111,17 @@ def _feed(bus, player, rounds: int, nodes=(6, 7, 8)) -> None:
 
 def test_demo_arc() -> None:
     print("[arc] demo story arc — GREEN -> AMBER -> RED, pinned")
+    _dp.trained_push = lambda window, fs=100: 0.0  # noqa: E731
+    try:
+        _test_demo_arc_body()
+    finally:
+        # ROADMAP line 58: restore the process-global so importing/running this
+        # test never leaks the zero-push stub into other modules (pytest-safe /
+        # order-independent).
+        _dp.trained_push = _ORIG_TRAINED_PUSH
+
+
+def _test_demo_arc_body() -> None:
     reset_anomaly_baseline()
     bus = events.get_bus()
     pub = FakePublisher()

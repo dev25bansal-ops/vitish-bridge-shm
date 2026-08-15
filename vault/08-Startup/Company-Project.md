@@ -66,8 +66,8 @@ One hero data flow: `sensor → MQTT → Postgres + WebSocket → AI (CV + vibra
 | # | Component | Status today (honest) |
 |---|---|---|
 | 1 | **IoT sensing** — Z24 replay simulator through the real MQTT pipeline; ESP32-S3 + IMU hardware node | Simulator **REAL** (verified); hardware node = next build |
-| 2 | **Computer vision** — crack segmentation (YOLO-seg) | Pipeline **REAL**, real datasets downloaded (crack-seg 4,081 imgs, CRACK500+DeepCrack, dacl10k); trained weights = next build |
-| 3 | **Digital twin** — parametric R3F suspension bridge + MapLibre fleet map | **REAL + verified** (light theme, offline-safe, toggle-map) |
+| 2 | **Computer vision** — crack segmentation (YOLO-seg) | Pipeline **REAL + weights trained**: `crack_seg.pt` (YOLO26s-seg on 4,081 CC0 CrackSeg9k) drives the demo crack beats through strict YOLO ([[CV-Model]]) |
+| 3 | **Digital twin** — parametric R3F Z24 box-girder bridge + MapLibre fleet map (+ optional Cesium Geo view, D2-7) | **REAL + verified** (light theme, offline-safe, toggle-map) |
 | 4 | **Predictive maintenance** — VAE+OCSVM + LSTM-AE anomaly → **transparent BHI** + copilot recommendation | **REAL + verified** (LSTM-AE trained; PR 0.996 / recall 0.999 published for the primary) |
 
 ### The Bridge Health Index (the product's spine)
@@ -136,7 +136,7 @@ BHI = 100 × (1 − 0.40·cv − 0.35·vib − 0.25·load) × age_factor × traf
 **Built & verified (2026-08-13):** Z24 replay pipeline end-to-end (MQTT→Postgres→inference→BHI→twin), VAE+OCSVM + LSTM-AE trained, transparent BHI, parametric twin + MapLibre fleet map, light theme, demo arc verified.
 
 **Next (30-day):**
-1. **Train real CV weights** on the now-downloaded real datasets (crack-seg 4,081 imgs → CRACK500/DeepCrack → dacl10k) → wire real crack detections into the `cv` sub-index (the contract path already exists).
+1. ~~Train real CV weights~~ — **DONE**: `crack_seg.pt` trained on 4,081 CC0 CrackSeg9k and wired into the `cv` sub-index via `cv_feed.py` (strict YOLO on curated frames). Retraining on the larger dacl10k/SDNET2018 fold stays a later pilot task (dev-only, CC BY-NC / registration).
 2. **ESP32 + IMU hardware node** streaming into the same MQTT topics (real hardware in the loop).
 3. **RUL / predictive-maintenance forecast** (remaining-life projection) on the trend.
 4. **CRN 0–6 calibration study** against IRICEN ratings.
@@ -184,7 +184,7 @@ An investor/judge will probe in 2 minutes. Here's the exact ledger (from a full 
 | Z24 replay → MQTT → Postgres → WS → twin | **REAL** | 991 MB real benchmark mmap-replayed; Postgres rows verified; API + WS smoke-tested |
 | Vibration weights (VAE/OCSVM + LSTM-AE) | **REAL** | Trained on 4,050 real-Z24 healthy windows; MC-dropout uncertainty; *but* contributes a bounded lift — the deterministic floor is what stays GREEN/RED correctly |
 | BHI + uncertainty + bands | **REAL** | Transparent formula; verified arc GREEN 87 → AMBER → RED 33.6, no flicker |
-| CV crack detection | **SCRIPTED** (next 30 days) | No `crack_seg.pt`; demo fires `cmd:cv` events; heuristic Canny fallback exists; **real datasets now downloaded** (crack-seg 4,081 imgs, CRACK500+DeepCrack, dacl10k) — training is the immediate next build |
+| CV crack detection | **REAL** | `crack_seg.pt` trained on 4,081 CC0 CrackSeg9k imgs (recall ≥ heuristic, clean-FP gate ≤0.15); the demo's crack beats run ONE real curated CC0 crack photo through the strict YOLO and map the real conf/area → cv evidence (`backend/app/cv_feed.py`, fixed formula); scripted value only as a tagged `cv_feed-fallback`; Canny heuristic fallback exists for interactive tools |
 | ESP32 + IMU edge node | **ABSENT** (30-day build) | No firmware; simulator fakes device metadata |
 | Load/traffic input | **SCRIPTED** | `cmd:load` control events; no WIM source yet |
 | RUL / predictive maintenance | **NOT BUILT** | age/traffic factors = 1.0; vibration-trend projection is the v1 approximation |
@@ -222,4 +222,4 @@ An investor/judge will probe in 2 minutes. Here's the exact ledger (from a full 
 ---
 
 *Sources: every fact above links to a vault note or the repo. Nothing invented.*
-*Next action: incorporation + the CV training build (real crack_seg.pt) + 2 pilot LOIs + the India TAM model.*
+*Next action: incorporation + 2 pilot LOIs + the India TAM model (CV training is DONE — `crack_seg.pt` trained and wired).*

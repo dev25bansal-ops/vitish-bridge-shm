@@ -11,27 +11,27 @@
 // Falls back to the analytic reference silently: if the backend is down, the
 // store keeps its default (f1 3.8 Hz, no drift) and the mode animation falls
 // back to the reference simple-span sine (scene/collapse.ts).
-import { useStore } from '../store'
+import { useStore, F1_REF_HZ } from '../store'
+import { warnOnce } from './warnOnce'
+import { apiBase } from './config'
 
-const STIFFNESS_URL = 'http://127.0.0.1:8000/api/bridge/z24/stiffness'
-const SEEDED_URL = 'http://127.0.0.1:8000/api/bridge/z24/seeded-defect'
 const POLL_MS = 1500
 
 let timer: ReturnType<typeof setInterval> | null = null
 
 async function pollStiffness(): Promise<void> {
   try {
-    const res = await fetch(STIFFNESS_URL)
+    const res = await fetch(`${apiBase()}/api/bridge/z24/stiffness`)
     if (!res.ok) return
     const s = (await res.json()) as Record<string, unknown>
     if (typeof s.f1_meas !== 'number') return
     const st = useStore.getState()
     st.setStiffness({
       f1Meas: s.f1_meas as number,
-      f1Ref: (s.f1_ref as number) ?? 3.8,
+      f1Ref: (s.f1_ref as number) ?? F1_REF_HZ,
       eiDriftPct: (s.ei_drift_pct as number) ?? 0,
       damagePct: (s.damage_pct as number) ?? 0,
-      freqs: Array.isArray(s.freqs) ? (s.freqs as number[]) : [3.8],
+      freqs: Array.isArray(s.freqs) ? (s.freqs as number[]) : [F1_REF_HZ],
       x: Array.isArray(s.x) ? (s.x as number[]) : [],
       shapes: Array.isArray(s.shapes) ? (s.shapes as number[][]) : [],
       baselineLocked: s.baseline_locked === true,
@@ -61,12 +61,13 @@ async function pollStiffness(): Promise<void> {
     st.setLive({ freq: s.f1_meas as number })
   } catch {
     // backend unreachable — replay/reference fallback stays in effect
+    warnOnce('stiffness', 'GET /api/bridge/z24/stiffness failed — overlay stays on analytic reference')
   }
 }
 
 async function pollSeeded(): Promise<void> {
   try {
-    const res = await fetch(SEEDED_URL)
+    const res = await fetch(`${apiBase()}/api/bridge/z24/seeded-defect`)
     if (!res.ok) return
     const s = (await res.json()) as Record<string, unknown>
     if (typeof s.f1 !== 'number') return
@@ -89,7 +90,7 @@ async function pollSeeded(): Promise<void> {
       label: typeof s.label === 'string' ? s.label : 'none',
       source: typeof s.source === 'string' ? s.source : '',
       f1: s.f1 as number,
-      f1Ref: (s.f1_ref as number) ?? 3.8,
+      f1Ref: (s.f1_ref as number) ?? F1_REF_HZ,
       f1DriftPct: (s.f1_drift_pct as number) ?? 0,
       eiLossPct: (s.ei_loss_pct as number) ?? 0,
       perSpanLossPct: Array.isArray(s.per_span_loss_pct)
@@ -99,12 +100,23 @@ async function pollSeeded(): Promise<void> {
     })
   } catch {
     // backend unreachable — replay/reference fallback stays in effect
+    warnOnce('seeded-defect', 'GET /api/bridge/z24/seeded-defect failed — overlay stays on analytic reference')
   }
 }
 
+// Overlap guard: the poll is two sequential fetches at POLL_MS=1500 — if the
+// backend is slow, a tick must not stack a second in-flight poll on top.
+let inFlight = false
+
 async function poll(): Promise<void> {
-  await pollStiffness()
-  await pollSeeded()
+  if (inFlight) return
+  inFlight = true
+  try {
+    await pollStiffness()
+    await pollSeeded()
+  } finally {
+    inFlight = false
+  }
 }
 
 export function startStiffnessPolling(): void {

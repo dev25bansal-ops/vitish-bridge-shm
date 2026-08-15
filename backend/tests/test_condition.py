@@ -40,8 +40,19 @@ def check(name: str, condv: bool, extra: str = "") -> None:
 
 def test_mapping() -> None:
     print("[condition] documented mapping (auditable thresholds)")
-    check("no cracks -> NBI 9 Excellent",
-          cond.condition_card([], mode="yolo-seg")["condition"]["nbi"] == 9)
+    # ROADMAP line 67: zero evidence -> NEVER 'Excellent' @0.75 from 'segmentation'.
+    z = cond.condition_card([], mode="yolo-seg")
+    check("no evidence -> NBI 9 (top band)", z["condition"]["nbi"] == 9,
+          str(z["condition"]["nbi"]))
+    check("no evidence -> 'No crack evidence detected' (not 'Excellent')",
+          z["condition"]["nbi_label"] == "No crack evidence detected",
+          z["condition"]["nbi_label"])
+    check("no evidence -> source no-evidence", z["source"] == "no-evidence",
+          z["source"])
+    check("no evidence -> LOW confidence (<= 0.4, not 0.75)",
+          z["confidence"] <= 0.4, str(z["confidence"]))
+    check("no evidence -> severity says no evidence",
+          z["severity"] == "no crack evidence", z["severity"])
     # 3 mild cracks -> moderate severity, NBI ~7, risk A/B
     mild = [{"conf": 0.6, "severity": 0.05}, {"conf": 0.5, "severity": 0.03}]
     card = cond.condition_card(mild, mode="yolo-seg")
@@ -59,6 +70,17 @@ def test_mapping() -> None:
           str(ch["condition"]["nbi"]))
     check("crack index monotone", ch["crack_index"] > card["crack_index"],
           f"{card['crack_index']} < {ch['crack_index']}")
+    # ROADMAP line 67: NBI_PER_CI=9.0 makes band 0 'Failed' REACHABLE at ci==1.
+    nbi0 = cond.nbi_condition(1.0)
+    check("NBI band 0 'Failed' reachable at ci==1.0",
+          nbi0 == (0, "Failed"), str(nbi0))
+    nbi9 = cond.nbi_condition(0.0)
+    check("NBI band 9 'Excellent' at ci==0.0", nbi9 == (9, "Excellent"), str(nbi9))
+    check("imaged_frac clamped to [0,1]",
+          cond.condition_card([], cv_subindex=0.4, imaged_frac=1.7)
+          ["evidence"]["imaged_frac"] == 1.0,
+          str(cond.condition_card([], cv_subindex=0.4, imaged_frac=1.7)
+              ["evidence"]["imaged_frac"]))
 
 
 def test_live_cv() -> None:

@@ -9,11 +9,19 @@ REST surface for the digital twin and the demo controller:
     GET  /api/bridge/{id}/state          current BHI + sub-indices + state
     GET  /api/bridge/{id}/stiffness      f1, EI drift, damage %, FEM mode shapes
     GET  /api/bridge/{id}/history?metric=bhi|rms&limit=N
+    GET  /api/bridge/{id}/alerts?limit=N   recent alerts (live bridge)
     POST /api/demo/scenario              {"scenario": "healthy"|"rupture"}
 
 CORS is open because the twin runs on a different port.  The app is state-light:
 it reads the shared store (auto-selected Postgres/memory) and publishes control
 commands on the shared event bus.
+
+Local-only-safe (ROADMAP line 92): ``allow_origins=["*"]`` with
+``allow_credentials=True`` is only safe on a same-machine demo — browsers
+REFUSE to send credentials on a wildcard-origin CORS response, so no
+credential-bearing cross-origin request can work here, and the API binds
+0.0.0.0 on the dev box.  A public deployment must pin exact origins and split
+credentials (and the 0.0.0.0 bind) — see ROADMAP line 121.
 """
 from __future__ import annotations
 
@@ -35,6 +43,7 @@ from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
 from app import deterioration as det_mod  # noqa: E402
+from app import edge_node as edge_mod  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
 from app import stiffness as stiffness_mod  # noqa: E402
 from app.config import settings  # noqa: E402
@@ -45,7 +54,6 @@ from app.regulator_bridges import (  # noqa: E402
     all_bridges,
     find_bridge,
     geojson as bridges_geojson,
-    simulated_health,
 )
 
 log = logging.getLogger(__name__)
@@ -53,6 +61,15 @@ log = logging.getLogger(__name__)
 _DEFAULT_HERO = {"bhi": 87.0, "u": 3.0, "cv": 0.10, "vib": 0.12, "load": 0.19,
                  "state": "GREEN"}
 _UPTIME0 = time.time()
+
+# actual bound ports (run_all.py may fall back to a free port when 8000/8765
+# are busy); reported via /api/config so the twin never hardcodes them.
+_api_port: Optional[int] = None
+
+
+def set_api_port(port: int) -> None:
+    global _api_port
+    _api_port = port
 
 
 class ScenarioRequest(BaseModel):
@@ -90,12 +107,18 @@ def create_app() -> FastAPI:
             return False
 
     def _live_hero_state() -> dict:
+        """Hero state with a DEFAULT_HERO fallback for every field (ROADMAP
+        line 92): per-key .get() so a partial store state can never raise
+        KeyError, and every key the endpoints read is guaranteed present."""
         st = _store().current_state(settings.bridge_id)
         merged = dict(_DEFAULT_HERO)
-        if st.get("bhi") is not None:
-            merged.update({k: st[k] for k in ("bhi", "u", "cv", "vib", "load", "state")})
-        merged.update({"ts": st.get("ts"), "nodes": st.get("nodes", {}),
-                       "source": st.get("source")})
+        for k in ("bhi", "u", "cv", "vib", "load", "state"):
+            v = st.get(k)
+            if v is not None:
+                merged[k] = v
+        merged["ts"] = st.get("ts")
+        merged["nodes"] = st.get("nodes", {})
+        merged["source"] = st.get("source")
         return merged
 
     # -- endpoints ----------------------------------------------------------------
@@ -139,7 +162,8 @@ def create_app() -> FastAPI:
         return cm.build_manifest(
             settings, cm.get_data_source(),
             live_active=feed is not None,
-            live_status=feed.status() if feed else None)
+            live_status=feed.status() if feed else None,
+            edge_status=edge_mod.get_edge_status())
 
     @app.get("/api/bridges")
     def bridges() -> dict:
@@ -167,6 +191,13 @@ def create_app() -> FastAPI:
                 "hero": True,
                 "live": True,
             }
+        if bridge_id == edge_mod.EDGE_BRIDGE:
+            st = edge_mod.get_edge_status()
+            if st is None:
+                raise HTTPException(status_code=404,
+                                    detail="edge node monitor not running")
+            return {"id": bridge_id, "name": "ESP32 edge node",
+                    "hero": False, "live": True, **st}
         b = find_bridge(bridge_id)
         if b is None:
             raise HTTPException(status_code=404, detail="bridge not found")
@@ -211,7 +242,7 @@ def create_app() -> FastAPI:
         (D1-4/D2-11).  Probabilistic model, never a certified RUL."""
         if bridge_id == settings.bridge_id:
             hero = _live_hero_state()
-            bhi = float(hero.get("bhi") or _DEFAULT_HERO["bhi"])
+            bhi = float(hero["bhi"])
         else:
             b = find_bridge(bridge_id)
             if b is None:
@@ -221,6 +252,13 @@ def create_app() -> FastAPI:
             return det_mod.bridge_deterioration(bridge_id, bhi, years=years, rating=rating)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        except FileNotFoundError:
+            # LTBP summary not built yet (item 9, ROADMAP-NEXT) — a clean 503
+            # with the remedy instead of an unhandled 500.
+            raise HTTPException(
+                status_code=503,
+                detail="LTBP Markov priors not available — run scripts/ltbp_analyze.py "
+                       "to build data/ltbp/analysis/ltbp_summary.json")
 
     @app.get("/api/bridge/{bridge_id}/condition")
     def condition(bridge_id: str, run_seg: int = Query(0, ge=0, le=1)) -> dict:
@@ -234,21 +272,32 @@ def create_app() -> FastAPI:
         from models.fusion import condition as cond_mod
         if bridge_id == settings.bridge_id:
             hero = _live_hero_state()
-            cv = float(hero.get("cv") or _DEFAULT_HERO["cv"])
+            cv = float(hero["cv"])
         else:
             b = find_bridge(bridge_id)
             if b is None:
                 raise HTTPException(status_code=404, detail="bridge not found")
             cv = 0.15  # illustrative regulator cv sub-index (see regulator_bridges)
         if run_seg:
-            from models.cv.inference import CrackDetector, demo_frame
-            det = CrackDetector()
-            dets = det.detect(demo_frame(size=320, seed=7))
+            import cv2
+            from app import cv_feed
+            # shared cached detector — the 92 MB YOLO loads ONCE per process,
+            # not once per request (ROADMAP line 44)
+            det = cv_feed.get_detector()
+            frame_path = cv_feed.DEMO_FRAMES / "mild_crack.jpg"
+            img = cv2.imread(str(frame_path))
+            if img is None:
+                from models.cv.inference import demo_frame
+                img = demo_frame(size=320, seed=7)
+                frame_note = "real segmentation on a synthetic demo crack frame " \
+                             "(models/cv.inference.demo_frame)"
+            else:
+                frame_note = (f"real segmentation on {frame_path.parent.name}/"
+                              f"{frame_path.name} (CC0 CrackSeg9k val)")
+            dets = det.detect(img)
             mode = "yolo-seg" if "yolo" in det.mode else "heuristic"
             return cond_mod.condition_card(
-                dets, mode=mode,
-                frame_note="real segmentation on a synthetic demo crack frame "
-                           "(models/cv/inference.demo_frame)")
+                dets, mode=mode, frame_note=frame_note)
         return cond_mod.card_from_live_cv(cv)
 
     @app.get("/api/bridge/{bridge_id}/history")
@@ -264,6 +313,15 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=400, detail="metric must be bhi|rms")
             return {"bridge": bridge_id, "metric": metric, "limit": limit, "data": data}
 
+        if bridge_id == edge_mod.EDGE_BRIDGE:
+            if metric != "rms":
+                raise HTTPException(status_code=400,
+                                    detail="edge node exposes only rms history")
+            st = edge_mod.get_edge_status()
+            rows = (st or {}).get("recent_rms", [])
+            return {"bridge": bridge_id, "metric": metric, "limit": limit,
+                    "data": rows[-limit:]}
+
         b = find_bridge(bridge_id)
         if b is None:
             raise HTTPException(status_code=404, detail="bridge not found")
@@ -271,6 +329,21 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="metric must be bhi|rms")
         data = _simulated_history(b, metric, limit)
         return {"bridge": bridge_id, "metric": metric, "limit": limit, "data": data}
+
+    @app.get("/api/bridge/{bridge_id}/alerts")
+    def alerts_history(bridge_id: str,
+                       limit: int = Query(50, ge=1, le=500)) -> dict:
+        """Recent alerts for the live bridge (oldest first); empty for regulator
+        / edge bridges that keep no alert store (item 7, ROADMAP-NEXT)."""
+        if bridge_id == settings.bridge_id:
+            st = _store()
+            try:
+                data = st.recent_alerts(bridge_id, limit)
+            except Exception:
+                # persistence down — honest empty history rather than a 500
+                data = []
+            return {"bridge": bridge_id, "limit": limit, "alerts": data}
+        return {"bridge": bridge_id, "limit": limit, "alerts": []}
 
     @app.post("/api/demo/scenario")
     def demo_scenario(req: ScenarioRequest) -> dict:
@@ -283,13 +356,16 @@ def create_app() -> FastAPI:
 
     @app.get("/api/config")
     def api_config() -> dict:
+        from app import ws_bridge as ws_mod
+        ws_port = ws_mod.get_bound_port() or settings.ws_port
         return {
             "bridge": settings.bridge_id,
             "nodes": settings.nodes,
             "fs": settings.fs,
             "window_n": settings.window_n,
             "window_s": settings.window_s,
-            "ws_port": settings.ws_port,
+            "api_port": _api_port or settings.api_port,
+            "ws_port": ws_port,
             "broker": {"host": settings.broker_host, "port": settings.broker_port},
             "demo_speed": settings.demo_speed,
         }

@@ -42,7 +42,10 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from models.vibration import stiffness as physics
+try:
+    from . import stiffness as physics
+except ImportError:  # running as a bare script (python models/vibration/seeded_defect.py)
+    import stiffness as physics
 
 # --- catalog ------------------------------------------------------------------
 @dataclass(frozen=True)
@@ -190,11 +193,15 @@ def describe(progress: Optional[Dict[str, float]] = None,
     prog = {k: float(v) for k, v in (progress or {}).items() if v and v > 0}
     base = float(f1_base) if f1_base and f1_base > 0 else physics.F1_REF
     f1 = f1_of_progress(prog)
+    # iterate the full catalog in a defined order (Z24 campaign sequence, then
+    # S101) — NOT just Z24_SEQUENCE — so a pure-S101 progress dict (e.g.
+    # {'girder_saw_cut': 1.0}) is described correctly (ROADMAP line 43).
+    ordered = Z24_SEQUENCE + S101_SEQUENCE + [k for k in prog if k not in DEFECTS]
     active = [{"key": k, "short": DEFECTS[k].short, "source": DEFECTS[k].source,
                "progress": round(prog[k], 3),
                "ei_loss_pct": round(prog[k] * DEFECTS[k].max_ei_loss * 100.0, 1),
                "zone": list(DEFECTS[k].zone)}
-              for k in Z24_SEQUENCE if k in prog and prog[k] > 0]
+              for k in ordered if k in DEFECTS and k in prog and prog[k] > 0]
     # dominant = the defect with the worst current EI loss (physical severity);
     # latest = the campaign step just seeded (narrative position).
     dominant = (max(active, key=lambda a: a["ei_loss_pct"]) if active else None)

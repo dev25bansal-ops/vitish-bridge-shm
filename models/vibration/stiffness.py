@@ -32,7 +32,15 @@ roughly 7–9%).
 """
 from __future__ import annotations
 
+import os
 from typing import List, Optional, Tuple
+
+# Pin BLAS to 1 thread BEFORE numpy's first BLAS call (see backend/app/__init__
+# for the measured 50x: 0.18s -> 0.0035s per FEM solve).  This module is the
+# FEM hot path and may be imported standalone (models/*), outside the app
+# package that normally sets it.  setdefault: user env wins.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import numpy as np
 
@@ -77,6 +85,12 @@ def fem_modes(ei_profile: Optional[np.ndarray] = None,
     First `n_modes` natural frequencies (Hz) + mode shapes (N_SEG+1, n_modes),
     each shape sampled at the deck nodes.  `ei_profile` (N_SEG,) sets per-
     element EI (damage); `None` uses the calibrated uniform EI_CAL.
+
+    Solved as the symmetric-definite generalized eigenproblem Kx = λMx via a
+    Cholesky transform (M = LLᵀ, A = L⁻¹KL⁻ᵀ symmetric) so we can use the fast
+    symmetric ``np.linalg.eigh``.  The previous dense general ``eigvals`` was
+    ~0.3 s per solve — fine for a one-off, but ``seeded_state()`` runs it every
+    simulator tick, so a 30x-slower solve visibly stretched the demo cadence.
     """
     ne = N_SEG
     nd = _NODES * 2
@@ -95,19 +109,25 @@ def fem_modes(ei_profile: Optional[np.ndarray] = None,
     keep = [i for i in range(nd)
             if not ((i % 2 == 0) and (_X[i // 2] in SUPPORTS))]
     Ks, Ms = K[np.ix_(keep, keep)], M[np.ix_(keep, keep)]
-    w2 = np.sort(np.linalg.eigvals(np.linalg.solve(Ms, Ks)).real)
-    freqs = np.sqrt(np.clip(w2, 0, None)) / (2 * np.pi)
+
+    # Kx = λMx  ->  L = chol(M), A = L⁻¹KL⁻ᵀ,  A y = λ y,  x = L⁻ᵀ y
+    L = np.linalg.cholesky(Ms)
+    Linv = np.linalg.inv(L)
+    A = Linv @ Ks @ Linv.T
+    A = 0.5 * (A + A.T)          # symmetrize against floating-point noise
+    lam, V = np.linalg.eigh(A)
+    order = np.argsort(lam)
+    lam, V = lam[order], V[:, order]
+    freqs = np.sqrt(np.clip(lam, 0, None)) / (2 * np.pi)
     freqs = freqs[:n_modes]
 
-    # mode shapes: solve M⁻¹K V = λV for the lowest modes via the inverse
-    # iteration-free route — eigen-decompose the already-solved system.
-    lam, V = np.linalg.eig(np.linalg.solve(Ms, Ks))
-    order = np.argsort(lam.real)
+    # mode shapes: x = L⁻ᵀ y, re-expanded into the full DOF vector (zeros at the
+    # constrained support DOFs), then sample the transverse DOFs (w at each node)
     shapes = []
     for m in range(n_modes):
-        vec = np.zeros(nd)
-        vec[keep] = V[:, order[m]].real
-        w_node = vec[0::2]
+        x = np.zeros(nd)
+        x[keep] = Linv.T @ V[:, m]
+        w_node = x[0::2]
         # normalise to unit max deflection
         w_node = w_node / (np.max(np.abs(w_node)) + 1e-12)
         shapes.append(w_node)
@@ -139,11 +159,16 @@ def f1_of_profile(ei_profile: Optional[np.ndarray] = None) -> float:
 def damage_from_f1(f1: float, lo: float = 0.0, hi: float = 0.9,
                    tol: float = 1e-4) -> float:
     """Invert `f1_of_damage` (bisection): the mid-span EI reduction % that
-    reproduces a measured f1.  Monotone, so bisection converges fast."""
+    reproduces a measured f1.  Monotone, so bisection converges fast.  The
+    range [0, 0.9] reaches `tol` in ~14 iterations; the old fixed 80-loop ran
+    ~6x more FEM solves than the tolerance allows (each solve is the FEM
+    eigenvalue problem), so we exit as soon as the bracket is tight."""
     if f1 <= 0 or f1 >= F1_REF:
         return 0.0
     for _ in range(80):
         mid = 0.5 * (lo + hi)
+        if hi - lo < tol:
+            break
         if f1_of_damage(mid) < f1:
             hi = mid  # too much damage -> f1 below target; reduce it
         else:

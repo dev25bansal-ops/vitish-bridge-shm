@@ -8,8 +8,15 @@ VITISH 2026 · PS#99 SHM — paho-mqtt helpers.
 * :func:`emit`         — the standard producer helper: publish to MQTT, and when
   the broker is unreachable ALSO publish directly on the event bus so the demo
   keeps running without Docker (the subscriber is silent in that case, so there
-  is never a duplicate).
+  is never a duplicate).  The fallback is subscriber-aware: if a started
+  subscriber is not connected, MQTT would not deliver either, so the bus copy is
+  published as well.
 * :func:`make_mqtt_router` — bridges MQTT -> event bus for the whole stack.
+
+Both the publisher and subscriber register ``on_disconnect`` so the
+``connected`` flags clear the moment paho notices a drop — not up to the
+keepalive timeout later, during which paho would keep buffering outbound
+messages and the bus fallback would starve silently.
 """
 from __future__ import annotations
 
@@ -46,6 +53,35 @@ def _msg_id(prefix: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Live-subscriber registry — lets emit() know whether the MQTT round-trip is
+# actually delivering (see item 5, docs/ROADMAP-NEXT.md).
+# ---------------------------------------------------------------------------
+_sub_lock = threading.Lock()
+_subscribers: set = set()
+
+
+def _register_subscriber(s) -> None:
+    with _sub_lock:
+        _subscribers.add(s)
+
+
+def _unregister_subscriber(s) -> None:
+    with _sub_lock:
+        _subscribers.discard(s)
+
+
+def _subscriber_down() -> bool:
+    """True when a started subscriber is NOT connected (asymmetric startup or a
+    real broker death the publisher hasn't noticed yet).  No registered
+    subscribers -> False, so the legacy publisher-only contract holds for unit
+    tests that build a Publisher without a Subscriber."""
+    with _sub_lock:
+        if not _subscribers:
+            return False
+        return any(not s.connected.is_set() for s in _subscribers)
+
+
+# ---------------------------------------------------------------------------
 # Publisher
 # ---------------------------------------------------------------------------
 class Publisher:
@@ -62,6 +98,7 @@ class Publisher:
         )
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
         self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect
         self._thread: Optional[threading.Thread] = None
 
     def _on_connect(self, client, userdata, flags, reason_code, properties) -> None:
@@ -75,6 +112,15 @@ class Publisher:
             self.connected.set()
         else:
             log.warning("MQTT publisher connect refused: %s", reason_code)
+
+    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code,
+                       properties) -> None:
+        # Clear the connected flag the moment paho notices the drop — not after
+        # the keepalive timeout while paho keeps buffering outbound messages,
+        # which would silently starve the bus fallback in emit().
+        if self.connected.is_set():
+            log.info("MQTT publisher disconnected (rc=%s)", reason_code)
+        self.connected.clear()
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -209,6 +255,7 @@ class Subscriber:
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+        self.client.on_disconnect = self._on_disconnect
         self._thread: Optional[threading.Thread] = None
 
     def add_handler(self, topic: str, cb: Callable) -> None:
@@ -227,6 +274,12 @@ class Subscriber:
         else:
             log.warning("MQTT subscriber connect refused: %s", reason_code)
 
+    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code,
+                       properties) -> None:
+        if self.connected.is_set():
+            log.info("MQTT subscriber disconnected (rc=%s)", reason_code)
+        self.connected.clear()
+
     def _on_message(self, client, userdata, msg) -> None:
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
@@ -241,6 +294,7 @@ class Subscriber:
             log.exception("subscriber handler error on %s", msg.topic)
 
     def start(self) -> None:
+        _register_subscriber(self)
         self._thread = threading.Thread(
             target=self._connect_loop, name="mqtt-subscriber", daemon=True
         )
@@ -263,6 +317,7 @@ class Subscriber:
             time.sleep(2.0)
 
     def stop(self) -> None:
+        _unregister_subscriber(self)
         self._stop.set()
         try:
             self.client.disconnect()
@@ -283,9 +338,19 @@ def emit(topic: str, payload: dict, publisher: Optional[Publisher],
     directly on the event bus so the demo never depends on Docker being up.
     Because the MQTT subscriber is itself silent while the broker is down, the
     payload reaches consumers exactly once in both modes.
+
+    The bus fallback is also taken when the broker is up for the publisher but
+    NOT for a started subscriber (asymmetric startup or a broker death the
+    publisher hasn't noticed yet): publishing only to MQTT would otherwise drop
+    the message from the bus consumers entirely (item 5, ROADMAP-NEXT).
     """
+    broker_delivering = (
+        publisher is not None
+        and publisher.connected.is_set()
+        and not _subscriber_down()
+    )
     ok = publisher.publish(topic, payload, qos=qos) if publisher is not None else False
-    if bus is not None and (publisher is None or not publisher.connected.is_set()):
+    if bus is not None and not broker_delivering:
         bus.publish(topic, payload, source="offline-fallback")
     return ok
 

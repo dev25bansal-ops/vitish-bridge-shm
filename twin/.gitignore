@@ -5,3 +5,7 @@ dist-ssr
 .DS_Store
 .vite
 npm-debug.log*
+
+# secrets — VITE_CESIUM_TOKEN lives here and must NEVER be committed
+# (root .gitignore also covers .env, but keep the rule local too)
+.env

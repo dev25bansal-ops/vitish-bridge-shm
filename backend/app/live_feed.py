@@ -15,12 +15,20 @@ Honesty rules (never violated — see vault/08-Startup/Company-Project.md §14):
 - Rate is trivially low (a few messages/second at most), so qos=0 and a
   lossy public broker are fine.
 
-Contract untouched: the feed publishes contract-shaped dicts under
-``bridge/live-demo/...`` on the event bus. The existing recorder persists the
-``/accel`` rows; the WS bridge / API can surface the rest. Topics verified live
-2026-08-13: ``MSU/Accelerometer/{RMS,X,Y,Z,Vel,Disp}/LOC_MSU-*`` (structural
-condition-monitoring node), ``MSU/Temperature|Humidity``, ``shm/usb3134a/data``
-(1 Hz SHM DAQ JSON), ``TiltSensor/#``, ``CNN/#`` (machinery vibration).
+Contract note (ROADMAP lines 37/91): the feed publishes bridge-scoped event-bus
+dicts under ``bridge/live-demo/...``, but the ``/accel`` row is a deliberately
+THIN rms-only row — ``fs=0, samples=[]`` — because the public MSU feed
+publishes RMS scalars only, never a raw 1024-sample waveform.  The frozen hero
+``validate_accel`` would reject it; ``contract.validate_accel(row,
+bridge='live-demo')`` accepts the thin row against its own expectations (see
+contract.py).  The recorder persists the ``/accel`` rows (bridge='live-demo',
+never fused into z24 BHI); the ``/telemetry`` envelopes are deliberately NOT
+persisted and the WS bridge does NOT forward ``bridge/live-demo/#`` — the API
+surfaces live status via REST ``/api/live`` (decision, ROADMAP line 91).
+Topics verified live 2026-08-13:
+``MSU/Accelerometer/{RMS,X,Y,Z,Vel,Disp}/LOC_MSU-*`` (structural condition-
+monitoring node), ``MSU/Temperature|Humidity``, ``shm/usb3134a/data`` (1 Hz SHM
+DAQ JSON), ``TiltSensor/#``, ``CNN/#`` (machinery vibration).
 """
 from __future__ import annotations
 
@@ -77,14 +85,26 @@ class LiveFeed:
     """One dedicated paho client on the public broker -> event bus.
 
     ``bridge/live-demo/accel``      — one accel row per MSU RMS scalar (persisted).
-    ``bridge/live-demo/telemetry``  — compact envelope for every other live value
-                                      (observable on the bus / WS, not persisted).
+    ``bridge/live-demo/telemetry``  — compact envelope for every other live value.
+                                      Persistence + WS-surface decision (ROADMAP
+                                      line 91): telemetry is observable on the BUS
+                                      only — the WS bridge does not subscribe
+                                      ``bridge/live-demo/#`` (no twin consumer; the
+                                      twin reads live status via REST ``/api/live``)
+                                      and the recorder deliberately does not persist
+                                      it (unvetted third-party scalars; the thin
+                                      accel rows already prove ingestion).
+
+    Every source topic is rate-capped to one publish per ``rate_cap_s`` (default
+    1.0 s), so a bursting publisher can't flood the bus or the recorder (ROADMAP
+    line 91).  Skips are counted in ``rate_limited`` and surfaced in status().
     """
 
     def __init__(self, bus, *, broker_host: str = PUBLIC_BROKER,
                  broker_port: int = PUBLIC_PORT,
                  source: str = "public-mosquitto",
-                 bridge: str = "live-demo") -> None:
+                 bridge: str = "live-demo",
+                 rate_cap_s: float = 1.0) -> None:
         self.bus = bus
         self.broker_host = broker_host
         self.broker_port = broker_port
@@ -92,6 +112,9 @@ class LiveFeed:
         self.bridge = bridge
         self.received = 0
         self.published = 0
+        self.rate_cap_s = rate_cap_s  # 0 disables the cap
+        self.rate_limited = 0
+        self._last_pub: Dict[str, float] = {}
         self.last_topic: str = ""
         self.last_ts: float = 0.0
         self.connected = threading.Event()
@@ -126,6 +149,21 @@ class LiveFeed:
             payload = msg.payload.decode("utf-8", errors="replace")
         try:
             for topic, event in self._adapt(msg.topic, payload):
+                # Per-source-topic rate cap (ROADMAP line 91): skip publishes on
+                # a topic that already fired within rate_cap_s, so a bursting
+                # publisher can't flood the bus/recorder. Distinct topics are
+                # never limited, so the MSU batch (~12 s cadence) sails through.
+                if self.rate_cap_s > 0:
+                    prev = self._last_pub.get(msg.topic, 0.0)
+                    if self.last_ts - prev < self.rate_cap_s:
+                        self.rate_limited += 1
+                        continue
+                    self._last_pub[msg.topic] = self.last_ts
+                    if len(self._last_pub) > 1024:  # prune: bounded topic set
+                        stale = [t for t, ts in self._last_pub.items()
+                                 if self.last_ts - ts > 60.0]
+                        for t in stale:
+                            del self._last_pub[t]
                 self.published += 1
                 self.bus.publish(topic, event, source=self.source)
         except Exception:
@@ -167,6 +205,8 @@ class LiveFeed:
             "connected": self.connected.is_set(),
             "received": self.received,
             "published": self.published,
+            "rate_limited": self.rate_limited,
+            "rate_cap_s": self.rate_cap_s,
             "last_topic": self.last_topic,
             "last_ts": self.last_ts,
             "source": self.source,

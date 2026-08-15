@@ -1,4 +1,18 @@
 
+==========================================================================
+SUPERSEDED — RAW RESEARCH EXTRACT, ARCHIVE ONLY
+This is the raw text dump of the ORIGINAL research report (V1.0, 13 Aug 2026).
+It has been AUDIT-CORRECTED and is SUPERSEDED by:
+  - docs/ROADMAP-NEXT.md  (the current, authoritative work plan — every number re-verified)
+  - VITISH_2026_MASTER_BUILD_PLAN.md  (master build plan with the honesty corrections applied)
+  - vault/  (Obsidian vault: verified facts, metrics, storyboard, Q&A, build log)
+DO NOT QUOTE numbers from this file. It still carries claims that were corrected
+away during the audit: "4 corroded cables", "18 days before failure", "60 m" span,
+"690 citations", mAP 0.65, "USD 5-15/mo", TLS, LoRaWAN, Jetson 30 FPS.
+The vault (vault/02-Research/Verified-Facts.md, vault/05-Demo/*) holds the corrected
+values and the honest scope of every claim.
+==========================================================================
+
 ===== PAGE 1 =====
 VITISH 2026 · SMART INDIA HACKATHON · CONSTRUCTIONTECH
 AI-Based Structural Health

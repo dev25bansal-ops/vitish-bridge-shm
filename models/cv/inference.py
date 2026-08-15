@@ -45,7 +45,14 @@ def mask_to_rle(binary_mask: np.ndarray) -> str:
 
 
 class CrackDetector:
-    """YOLO-seg crack detector with an always-available OpenCV fallback."""
+    """YOLO-seg crack detector with an always-available OpenCV heuristic fallback.
+
+    ``detect(image_bgr, *, return_yolo_only=True)`` enables STRICT mode: only
+    real YOLO results are returned, so genuinely clean frames stay ``[]``
+    (the heuristic emits FPs on clean concrete). Verification and the demo's
+    clean-frame policy use strict mode; interactive/video tools keep the
+    fallback (ROADMAP line 39).
+    """
 
     def __init__(self, weights_path: str | Path = DEFAULT_WEIGHTS, conf: float = 0.25,
                  iou: float = 0.45, device: str | None = None) -> None:
@@ -69,17 +76,33 @@ class CrackDetector:
                   "Train with: python models/cv/train_yolo.py")
 
     # ---------------------------------------------------------------- detect
-    def detect(self, image_bgr: np.ndarray) -> list[dict]:
-        """Detect cracks in a BGR image. Always returns a list of dicts."""
+    def detect(self, image_bgr: np.ndarray, *, return_yolo_only: bool = False) -> list[dict]:
+        """Detect cracks in a BGR image. Always returns a list of dicts.
+
+        ``return_yolo_only=True`` (strict mode): only real YOLO results are
+        returned. A genuinely clean frame returns ``[]`` — the heuristic
+        fallback is NEVER consulted, because on clean concrete it emits false
+        positives that defeat the demo's 'clean frame must not jump / no GREEN
+        flicker' policy and make verification measure the heuristic instead of
+        the model. A YOLO inference failure also returns ``[]`` (loudly) so a
+        strict run never silently substitutes the fallback. With no model
+        loaded, strict mode returns ``[]``.
+        """
         if image_bgr is None or image_bgr.size == 0:
             return []
         if self._model is not None:
             try:
                 dets = self._detect_yolo(image_bgr)
-                if dets:
+                if dets or return_yolo_only:
                     return dets
             except Exception as exc:
-                print(f"  [cv] WARNING: yolo inference failed ({exc}); heuristic fallback.")
+                print(f"  [cv] WARNING: yolo inference failed ({exc}); "
+                      + ("returning [] in strict mode."
+                         if return_yolo_only else "heuristic fallback."))
+                if return_yolo_only:
+                    return []
+        elif return_yolo_only:
+            return []  # strict mode with no model has nothing real to return
         return self._detect_heuristic(image_bgr)
 
     # ------------------------------------------------------------ yolo path
