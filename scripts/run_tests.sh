@@ -25,6 +25,7 @@ TESTS=(
   backend/tests/test_stiffness.py
   backend/tests/test_temperature.py
   backend/tests/test_trained_path.py
+  backend/tests/test_deconfounding.py
   scripts/verify_demo_arc.py
 )
 
@@ -43,4 +44,4 @@ if [ "$FAILED" -ne 0 ]; then
   echo "!! one or more tests failed"
   exit 1
 fi
-echo "== ALL 15 TEST FILES PASS =="
+echo "== ALL 16 TEST FILES PASS =="

@@ -132,7 +132,7 @@ export const HealthPanel = memo(function HealthPanel() {
               floor {live.vibEvidence.floor.toFixed(2)}
               {live.vibEvidence.trained_push > 0
                 ? ` + trained ${live.vibEvidence.trained_push.toFixed(2)}`
-                : ' · trained 0.00 (inert)'}
+                : ' · trained 0.00'}
             </span>
           </div>
         )}

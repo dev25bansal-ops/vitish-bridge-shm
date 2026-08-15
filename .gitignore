@@ -9,6 +9,8 @@ venv/
 *.pt
 *.onnx
 models/weights/*.pkl
+# Pre-retrain weight backups (one-off, re-generable)
+models/weights/bak-*/
 !models/weights/.gitkeep
 # YOLO training runs (batch-preview images + weights are bulk and re-generable;
 # the trained weights under models/weights/*.pt are separately ignored)
@@ -69,6 +71,10 @@ docker-data/
 .verify/arc_calib.py
 # Diagnostic probe scripts (superseded by backend/tests/* when promoted)
 .verify/*.py
+.verify/*.ps1
+# Large/transient headless-browser + upload artifacts — never commit
+.verify/chrome-geo-profile/
+.verify/hf_parts/
 
 # Vendor tooling for the ESP edge node (downloaded binaries/drivers/logs — keep
 # on disk for the hardware work, never commit; only the human-authored helper
@@ -80,6 +86,14 @@ tools/esp/*.zip
 tools/esp/*.log
 tools/esp/cp210x_drv/
 tools/esp/driver_install.log
+
+# HBTA per-structure retrain — the tar (2.4 GB, data_100Hz.h5 inside) and the
+# dist/ staging copy are rebuildable artifacts; only the source scripts under
+# tools/hbta_retrain/ are tracked. Scratch training outputs (*_out/, *_weights/)
+# hold .npy (ignored above) + *.pt/*.pkl (ignored above).
+/hbta_retrain_*.tar.gz
+tools/hbta_retrain/dist/
+tools/hbta_retrain/*_out/
 
 # OS
 Thumbs.db

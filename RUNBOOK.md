@@ -110,12 +110,15 @@ dacl10k (CC BY-NC) and SDNET2018 (registration-gated) are research data only.
 
 - **Demo arc** — `bash scripts/verify_gate.sh` (gate 15) + `scripts/verify_demo_arc.py`
   re-pin BHI 87.1 → AMBER 67.5 → RED 33.6 against the real replay.
-- **Trained ensemble is EXPERIMENTALLY INERT** — the shipped scaler.pkl has a
-  near-zero-variance feature, so the trained push saturates ~0.9743 for healthy
-  AND damaged and the backend returns push 0.0. **The deterministic spectral
-  floor in `backend/app/anomaly.py` carries the demo arc.** Say exactly that; a
-  retrain (ROADMAP line 117) re-enables the ensemble. `test_trained_path.py`
-  (gate 10) pins this honesty.
+- **Trained ensemble is ACTIVE on shipped state** — the 2026-08-15 retrain
+  (non-degenerate scaler, real Z24) gives real separation: damaged-window
+  trained deviation mean ~0.09-0.12 vs healthy ~0 (measured). The demo-scale
+  synthetic stream stays inside the healthy envelope, so trained push stays ~0
+  in the demo and the pinned arc is carried by the deterministic spectral floor
+  in `backend/app/anomaly.py`. A degenerate-scaler guard remains: if a future
+  scaler.pkl has a near-zero-variance feature, the ensemble is honestly declared
+  INERT and push returns 0.0 rather than falsely scoring. `test_trained_path.py`
+  (gate 10) pins the separation.
 - **Live feed is a *demo of live ingestion*** — public-broker publishers are
   third-party and unvetted, tagged `source='public-mosquitto'`,
   `bridge='live-demo'`, never fused into the z24 BHI.

@@ -48,19 +48,40 @@ created: 2026-08-15
 
 ## 117 · Complete the trained ML story
 
-- **Current state** (honest): shipped `scaler.pkl` is degenerate (near-zero
-  variance feature); the trained ensemble is **declared INERT** — the
-  deterministic spectral floor owns the arc (the gate 15 banner says exactly
-  this; see [Key-Decisions] #9/#11 and RUNBOOK §5). The trained-path gate (10)
-  proves separation in principle on non-degenerate training.
-- **First step**: real retrain with a non-degenerate scaler (drop the constant
-  feature), then re-run the trained-path gate and re-pin the arc. This is the
-  highest-integrity fix available and is **purely in-repo** — no partner needed.
-- **Also in scope**: environmental de-confounding study (temperature-only → flat
-  anomaly; already demonstrated on Z24, write it up), per-structure-type
-  retraining, strain + acoustic channels.
-- **Acceptance**: the inert banner can be honestly removed because the trained
-  path contributes real separation on shipped state — measured, not assumed.
+- **DONE 2026-08-15 (retrain + gate — the acceptance below is met, measured):**
+  the ensemble was retrained on real Z24 (labels {0,1,6} healthy, channels 6/7/8)
+  with the scale-clamped code (`train_vae_ocsvm.py` clamps `scaler.scale_` ≥ 1e-6),
+  plus a chunked `mc_reconstruction_losses` in `train_lstm_ae.py` (the full-4050
+  batch blew past the 8 GB LSTM workspace). Shipped state now reports mode
+  `envelope-floor+push` (no INERT banner), and gate 10 (`test_trained_path.py`,
+  flipped) asserts real separation: healthy-window trained deviation max 0.0,
+  damaged-window mean 0.1158 (bound 0.05), module `demo_predictor.trained_push`
+  separates real damaged > healthy over 40 windows. The demo arc is unchanged —
+  the demo-scale synthetic stream stays inside the healthy envelope (trained
+  push ~0), `verify_demo_arc.py` still 19/19 (87.1/65.7/34.9). Original artifacts
+  backed up to `models/weights/bak-2026-08-15-pre-retrain/`.
+- **Historical state** (pre-retrain, honest): shipped `scaler.pkl` was degenerate
+  (near-zero variance feature); the trained ensemble was declared INERT — the
+  deterministic spectral floor owned the arc (see [Key-Decisions] #9/#11 and
+  RUNBOOK §5). The degenerate-scaler guard remains: any future degenerate scaler
+  is honestly declared inert instead of falsely scoring.
+- **DONE 2026-08-15 (de-confounding study — gate 16):** the environmental
+  de-confounding study is written up in [[Deconfounding-Study]] and pinned as
+  gate 16 (`backend/tests/test_deconfounding.py`, 11 checks, wired into
+  `scripts/verify_gate.sh` + `scripts/run_tests.sh`). Measured, re-run every
+  gate: the deterministic floor stays GREEN across a full-year thermal f1 sweep
+  on a FIXED noise realization (max 0.037 < 0.20) yet fires on the seeded
+  rupture at both seasonal extremes (0.721 winter / 0.939 summer). The trained
+  path's real-scale separation holds (healthy{0,1} dev 0.0; damaged mean 0.1158)
+  and its two honest limits are pinned: later-campaign healthy label {6}
+  deviates like damage (max 0.3715 — a season-agnostic retrain must flip this)
+  and demo-scale raw is amplitude-saturated (0.9803 constant, push 0 → the demo
+  arc is floor-carried by construction, which is why the retrain could not break
+  it). **Still in scope**: per-structure-type retraining (HBTA), strain +
+  acoustic channels (both need data that is not yet in the repo).
+- **Acceptance (met for the retrain + gate):** the inert banner is honestly
+  removed because the trained path contributes real separation on shipped
+  state — measured, not assumed.
 
 ## 118 · CV scale-up
 

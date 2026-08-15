@@ -86,13 +86,17 @@ class AnomalyDetector:
         self._envelope_margin = 0.05     # dead-band so healthy jitter never pushes
         self.trained_push = 0.85         # strength of the trained-model push
 
-        # Honesty relabel (ROADMAP line 40): the shipped scaler.pkl has a
-        # near-zero-variance feature, so StandardScaler standardization explodes
-        # and the VAE/OCSVM scores saturate identically for healthy AND damaged
-        # (measured raw 0.9743 / 0.9743 -> dev = push = 0.0).  When detected, the
-        # trained ensemble is declared INERT (never scored) rather than pretending
-        # it detects — the deterministic spectral floor owns the arc.  A retrain
-        # with a non-degenerate scaler (ROADMAP line 117) flips this flag off.
+        # Honesty relabel (ROADMAP line 40): a near-zero-variance feature in the
+        # scaler makes StandardScaler standardization explode and the VAE/OCSVM
+        # scores saturate identically for healthy AND damaged (measured raw
+        # 0.9743 / 0.9743 -> dev = push = 0.0 on the PRE-retrain scaler).  When
+        # detected, the trained ensemble is declared INERT (never scored) rather
+        # than pretending it detects — the deterministic spectral floor owns the
+        # arc.  The 2026-08-15 retrain (ROADMAP line 117) produced a non-
+        # degenerate scaler, so on shipped state this flag is OFF and the
+        # ensemble contributes real separation (healthy dev ~0, damaged dev mean
+        # ~0.09-0.12, measured).  The guard remains: any future degenerate
+        # scaler is honestly declared inert instead of falsely scoring.
         self._scaler_degenerate = False
 
         # heuristic fallback baseline (always maintained so it can serve/blend)
@@ -156,18 +160,19 @@ class AnomalyDetector:
                 self._mode_note = " + ".join(parts)
                 if self._scaler_degenerate:
                     # Honesty relabel (ROADMAP line 40): do NOT claim the ensemble
-                    # detects when its shipped scaler makes it measure as inert.
-                    self._mode_note += (" · EXPERIMENTAL — INERT (shipped scaler.pkl has "
-                                        "a near-zero-variance feature; contributes no "
-                                        "separation; the deterministic spectral floor "
-                                        "carries the arc)")
+                    # detects when its loaded scaler makes it measure as inert.
+                    self._mode_note += (" · EXPERIMENTAL — INERT (the loaded scaler.pkl "
+                                        "has a near-zero-variance feature; contributes "
+                                        "no separation; the deterministic spectral "
+                                        "floor carries the arc)")
                 else:
                     self._mode_note += " · envelope-floor+push"
                 print(f"  [infer] mode: {self._mode_note}  (device={self._device})")
                 if self._scaler_degenerate:
-                    print("  [infer] WARNING: shipped scaler.pkl is degenerate; trained "
-                          "ensemble declared INERT — the spectral floor owns the arc. "
-                          "Retrain with a non-degenerate scaler (ROADMAP line 117).")
+                    print("  [infer] WARNING: the loaded scaler.pkl is degenerate; "
+                          "trained ensemble declared INERT — the spectral floor owns "
+                          "the arc. Retrain with a non-degenerate scaler "
+                          "(ROADMAP line 117).")
 
     @property
     def mode(self) -> str:
@@ -180,12 +185,15 @@ class AnomalyDetector:
     def _detect_degenerate_scaler(self) -> bool:
         """True when the loaded StandardScaler has a near-zero-variance feature.
 
-        A scale ~0 feature (measured: min scale_ = 1.4e-8 on the shipped
+        A scale ~0 feature (measured: min scale_ = 1.4e-8 on the PRE-retrain
         scaler.pkl) makes standardized values explode to ~1e4-1e8, so the
         VAE/OCSVM scores saturate identically for healthy AND damaged windows
         (measured raw 0.9743 / 0.9743 -> dev = push = 0.0) and the trained
         ensemble contributes ZERO separation.  The honest response is to treat
         the ensemble as inert rather than pretend it detects (ROADMAP line 40).
+        The 2026-08-15 retrain clamps scaler.scale_ to >= 1e-6 and re-trained on
+        real Z24, so the shipped scaler is no longer degenerate; this guard only
+        trips if a degenerate scaler is ever shipped again.
         """
         try:
             scale = np.asarray(self._scaler.scale_, dtype=np.float64).ravel()
@@ -210,10 +218,11 @@ class AnomalyDetector:
     def _trained_raw(self, window: np.ndarray) -> tuple[float, float]:
         """Mean raw trained score + uncertainty across enabled trained components.
 
-        Returns (0.0, 1.0) when the ensemble is inert (degenerate shipped scaler)
+        Returns (0.0, 1.0) when the ensemble is inert (degenerate loaded scaler)
         so an uninformative model contributes no fake evidence — the honest
         relabeled state (ROADMAP line 40): artifacts are loaded and labelled
-        EXPERIMENTAL, but they do not score.
+        EXPERIMENTAL, but they do not score.  On shipped state the retrained
+        scaler is non-degenerate, so real raw scores are returned.
         """
         if self._scaler_degenerate:
             return 0.0, 1.0
@@ -299,7 +308,7 @@ class AnomalyDetector:
         Returns a float in [0, 1] = how far the trained ensemble's raw score
         departs above this bridge's OWN healthy envelope (high-water mark seen
         during warm-up). Returns 0.0 during warm-up, when no trained model is
-        loaded, or when the shipped scaler is degenerate (the ensemble is
+        loaded, or when the loaded scaler is degenerate (the ensemble is
         declared INERT — ROADMAP line 40), so an uninformative model can never
         create a false alarm. The deterministic spectral floor (owned by
         backend/app/anomaly.py) is always the base; this only adds honest

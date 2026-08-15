@@ -13,11 +13,14 @@ Honesty + safety rules:
     OWN healthy envelope (high-water mark seen during warm-up), so a model with
     no discriminative signal returns ~0 and can never create a false alarm or
     break the GREEN->RED story arc.  The floor always remains the base.
-  * EXPERIMENTAL RELABEL (ROADMAP line 40): the SHIPPED artifacts are inert —
-    scaler.pkl has a near-zero-variance feature, so scores saturate to ~0.9743
-    for healthy AND damaged and this module returns 0.0 (measured).  The
-    deterministic spectral floor in backend/app/anomaly.py carries the demo arc.
-    A non-degenerate retrain (ROADMAP line 117) re-enables the ensemble.
+  * On shipped state (2026-08-15) the ensemble is ACTIVE and separates on real
+    Z24: the retrain clamped scaler.scale_ to >= 1e-6 and re-trained on real
+    data, so damaged-window trained deviation is ~0.09-0.12 mean (healthy ~0,
+    measured).  The demo-scale synthetic stream stays inside the healthy
+    envelope, so push stays ~0 during the demo and the pinned arc is preserved.
+  * The degenerate-scaler guard (ROADMAP line 40) remains: if a future scaler
+    has a near-zero-variance feature, the ensemble is declared INERT and this
+    module returns 0.0 rather than falsely scoring.
   * ``push == 0.0`` during warm-up (the first ``n_healthy`` windows are absorbed
     as healthy evidence) and when no trained artifacts exist in models/weights/.
   * Trained artifacts are loaded lazily on first call and cached for the process

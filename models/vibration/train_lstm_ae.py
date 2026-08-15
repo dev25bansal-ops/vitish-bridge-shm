@@ -85,18 +85,27 @@ class LSTMAE(nn.Module):
 
 
 def mc_reconstruction_losses(model: nn.Module, X: np.ndarray, device: torch.device,
-                             n_samples: int = 20) -> np.ndarray:
+                             n_samples: int = 20, chunk: int = 256) -> np.ndarray:
     """Run the model n_samples times with dropout enabled (MC-dropout).
 
     Returns array of per-window reconstruction losses, shape (n_samples, n_windows).
+
+    The forward pass is chunked (default 256 windows at a time) so the LSTM
+    never runs the whole dataset in one cuDNN call — a full-4050 batch blows
+    past ~8 GB GPU memory in the RNN workspace (torch 2.13/cu130 measured).
     """
     model.train()  # dropout active
     xt = torch.tensor(X, dtype=torch.float32, device=device).unsqueeze(-1)
+    n = xt.shape[0]
     losses: list[np.ndarray] = []
     with torch.no_grad():
         for _ in range(n_samples):
-            recon = model(xt)
-            losses.append(((recon - xt.squeeze(-1)) ** 2).mean(dim=1).cpu().numpy())
+            col: list[np.ndarray] = []
+            for i in range(0, n, chunk):
+                xb = xt[i:i + chunk]
+                recon = model(xb)
+                col.append(((recon - xb.squeeze(-1)) ** 2).mean(dim=1).cpu().numpy())
+            losses.append(np.concatenate(col))
     return np.stack(losses)
 
 

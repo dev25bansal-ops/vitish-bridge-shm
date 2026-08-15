@@ -27,7 +27,7 @@ Do everything here BEFORE H0. This is what makes the 36 h survivable.
 - [x] Download dacl10k v3 + toolkit → `data/cv/dacl10k` (8,922 files verified) ✅
 - [x] Download SDNET2018 (correct slug) + Ultralytics crack-seg → `data/cv/sdnet2018` ✅ (dev-only, registration-gated)
 - [ ] Vänersborg (optional sanity check) — skip unless needed
-- [x] Fetch US NBI coordinates for 50 real bridges → `backend/app/regulator_bridges.py` (50 real fleet + hero at Nottwil) ✅
+- [x] Fetch US NBI coordinates for 50 real bridges → `backend/app/regulator_bridges.py` (50 real fleet + hero at A1 near Koppigen, CH — re-anchored 2026-08-15 from an incorrect Nottwil/Lake Sempach pin) ✅
 - [x] Inventory GPU / pre-staged Colab: training **already done** (crack_seg.pt, vae, ocsvm, lstm_ae) — no GPU needed at the venue ✅
 - [x] Pre-stage a working venv/Docker with all pinned deps; offline pip cache — `requirements.txt` + venv verified; offline run works (RUNBOOK §2) ✅
 
@@ -36,7 +36,7 @@ Do everything here BEFORE H0. This is what makes the 36 h survivable.
 - [x] dacl10k masks → YOLO-seg conversion (crack-only subset) → `models/cv/prep_crackseg9k.py` ✅
 - [x] Pre-train baseline binary crack segmenter → `models/weights/crack_seg.pt` (YOLO26s-seg, CrackSeg9k) ✅
 - [x] Z24 hourly modal-frequency + temperature features → cached → stiffness overlay + temperature normalization (gates 2/6) ✅
-- [x] Pre-train VAE+OCSVM + LSTM-AE; **verify anomaly rises on damage, flat on temperature-only** → trained-path gate 10 ✅ (honest: shipped scaler is inert by design — see RUNBOOK §5)
+- [x] Pre-train VAE+OCSVM + LSTM-AE; **verify anomaly rises on damage, flat on temperature-only** → trained-path gate 10 ✅ (flipped 2026-08-15 after the non-degenerate retrain: now asserts real separation — damaged-dev mean 0.1158 vs healthy 0.0; the pre-retrain shipped scaler's degeneracy is historical, RUNBOOK §5)
 - [x] Build R3F twin shell with pinned versions + mock-data mode → `twin/` (58 vitest tests) ✅
 - [ ] ESP32 firmware: WiFi + MQTT publish + rolling RMS flag — bench-tested → **H8-gated stretch, deferred** (firmware/ + tools/ in repo; no board flashed) — see [[Key-Decisions]] #11
 - [x] Docker Compose (Postgres + Mosquitto + app) — `docker-compose.yml` (optional; broker falls back) ✅

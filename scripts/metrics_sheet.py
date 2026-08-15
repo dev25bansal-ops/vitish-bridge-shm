@@ -20,8 +20,10 @@ Emits (prints + writes into vault/05-Demo/Metrics.md and <outdir>/):
          detector on real Z24 windows (10.24 s @ 100 Hz contract, nodes 6/7/8).
          HONEST CURRENT STATE: the synthetic-tuned floor does NOT cleanly
          separate real ambient Z24 scenarios, and the trained VAE/OCSVM ensemble
-         is inert (shipped scaler degenerate — ROADMAP line 40).  The sheet
-         reports exactly what is measured.  Scenario names follow the Z24
+         — ACTIVE on shipped state since the 2026-08-15 retrain (non-degenerate
+         scaler) — separates real damaged windows (trained deviation mean
+         ~0.09-0.12) from real healthy (~0, measured).  The sheet reports exactly
+         what is measured on each leg.  Scenario names follow the Z24
          campaign chronology and are marked *chronology-inferred* because the
          processed mirror (thanglexuan/Z24-dataset-processed, MIT) omits a label
          legend — verify against the registered KU Leuven portal metadata
