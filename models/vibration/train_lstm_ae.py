@@ -125,9 +125,12 @@ def train_lstm_ae(X: np.ndarray, epochs: int, hidden: int, latent_dim: int,
             recon = model(xb)
             loss = torch.mean((recon - xb.squeeze(-1)) ** 2)
             opt.zero_grad()
-            loss.backward()
-            opt.step()
-            ep_loss += float(loss.item()) * xb.shape[0]
+            # non-finite batch (rare GPU numerical excursion): drop it rather
+            # than poison the weights / MC-dropout stats
+            if bool(torch.isfinite(loss)):
+                loss.backward()
+                opt.step()
+                ep_loss += float(loss.item()) * xb.shape[0]
         if (ep + 1) % 10 == 0 or ep == 0:
             print(f"  [lstm] epoch {ep + 1}/{epochs} recon_loss={ep_loss / n:.6f}")
     model.eval()
@@ -146,11 +149,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--outdir", default=None)
     ap.add_argument("--synthetic", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--device", choices=["auto", "cpu"], default="auto",
+                    help="cpu = force CPU (fallback if a CUDA build diverges to NaN)")
     args = ap.parse_args(argv)
 
     outdir = Path(args.outdir) if args.outdir else REPO_ROOT / "models" / "weights"
     outdir.mkdir(parents=True, exist_ok=True)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu" if args.device == "cpu"
+                          else ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"  [env] device={device} torch={torch.__version__}")
 
     windows, meta = load_windows(None if args.synthetic else args.data)

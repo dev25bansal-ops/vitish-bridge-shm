@@ -22,6 +22,7 @@ Data input:
 Usage:
     python models/vibration/train_vae_ocsvm.py --data data/z24/inputs.npy --epochs 50
     python models/vibration/train_vae_ocsvm.py --synthetic --mode features --epochs 30
+    python models/vibration/train_vae_ocsvm.py --data hbta/healthy.npy --device cpu
 """
 from __future__ import annotations
 
@@ -48,6 +49,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WINDOW_N = 1024
 Z24_CHANNELS = 27
 Z24_SIM_NODES = [6, 7, 8]
+
+
+def _drop_non_finite(arr: np.ndarray) -> np.ndarray:
+    """Drop rows containing NaN/inf and report how many were removed.
+
+    A single non-finite window (h5 gap, dead sensor) would otherwise poison the
+    StandardScaler mean/scale -> NaN latents -> a cryptic sklearn crash. The
+    HBTA / Z24 sources are clean in practice; this is a cheap robustness guard.
+    """
+    ok = np.isfinite(arr).all(axis=1)
+    if not ok.all():
+        print(f"  [data] dropping {int((~ok).sum())} non-finite window(s)")
+        arr = arr[ok]
+    return arr
 
 
 # ---------------------------------------------------------------------------
@@ -136,10 +151,18 @@ def load_windows(data: str | None, healthy_labels=None, window_n: int = WINDOW_N
                 windows.append(s[i:i + window_n])
         if not windows:
             return synthetic_healthy_windows(), meta
-        meta["windows"] = len(windows)
-        return np.stack(windows).astype(np.float32), meta
+        out = np.stack(windows).astype(np.float32)
+        out = _drop_non_finite(out)
+        if out.shape[0] == 0:
+            return synthetic_healthy_windows(), meta
+        meta["windows"] = int(out.shape[0])
+        return out, meta
 
     if arr.ndim == 2 and arr.shape[1] == window_n:
+        arr = _drop_non_finite(arr)
+        if arr.shape[0] == 0:
+            print("  [data] all windows non-finite -> synthetic.")
+            return synthetic_healthy_windows(), meta
         meta = {"source": "windows", "synthetic": False, "windows": arr.shape[0]}
         return arr.astype(np.float32), meta
 
@@ -175,7 +198,13 @@ class VAE(nn.Module):
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         if self.training:
-            std = torch.exp(0.5 * logvar)
+            # Clamp logvar before exp: an unbounded logvar is the classic VAE
+            # NaN path (std -> inf -> decoder -> inf loss) and is GPU-sensitive
+            # — it diverged on the HBTA server's CUDA build (loss NaN at epoch
+            # 60) while training cleanly on this box with identical code+data.
+            # Bounds are far outside the healthy trajectory, so they are no-ops
+            # on normal runs and only break the divergent spike.
+            std = torch.exp(0.5 * logvar.clamp(min=-10.0, max=10.0))
             eps = torch.randn_like(std)
             return mu + eps * std
         return mu
@@ -205,12 +234,15 @@ def train_vae(windows: np.ndarray, epochs: int, input_mode: str, latent_dim: int
             xb = X[idx]
             recon, mu, logvar = model(xb)
             recon_mse = torch.mean((recon - xb) ** 2)
-            kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+            kld = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.clamp(max=10.0).exp())
             loss = recon_mse + beta * kld
             opt.zero_grad()
-            loss.backward()
-            opt.step()
-            ep_recon += float(recon_mse.item()) * len(idx)
+            # non-finite batch (rare GPU numerical excursion): drop it — the
+            # logvar clamp above makes this unreachable on the healthy path
+            if bool(torch.isfinite(loss)):
+                loss.backward()
+                opt.step()
+                ep_recon += float(recon_mse.item()) * len(idx)
         losses.append(ep_recon / n)
     model.eval()
     with torch.no_grad():
@@ -243,12 +275,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--outdir", default=None, help="default <repo>/models/weights")
     ap.add_argument("--synthetic", action="store_true", help="force synthetic healthy data")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--device", choices=["auto", "cpu"], default="auto",
+                    help="cpu = force CPU (fallback if a CUDA build diverges to NaN)")
     args = ap.parse_args(argv)
 
     outdir = Path(args.outdir) if args.outdir else REPO_ROOT / "models" / "weights"
     outdir.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu" if args.device == "cpu"
+                          else ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"  [env] device={device} torch={torch.__version__}")
 
     windows, meta = load_windows(None if args.synthetic else args.data)
@@ -280,6 +315,14 @@ def main(argv: list[str] | None = None) -> int:
     with torch.no_grad():
         mu, _ = vae.encode(torch.tensor(Xs, dtype=torch.float32, device=device))
         latents = mu.cpu().numpy()
+    if not np.isfinite(latents).all():
+        # Guard: never hand sklearn a NaN matrix (cryptic crash). If the VAE
+        # still diverges after the logvar clamp, surface an actionable cause
+        # instead of a raw check_array error.
+        raise RuntimeError(
+            "VAE produced non-finite latents (input NaN or a CUDA/cuBLAS "
+            "numerical divergence). Re-run with --device cpu, or check the "
+            "GPU driver / torch build. Refusing to fit an OCSVM on NaN.")
     ocsvm = fit_ocsvm(latents)
 
     # save artifacts

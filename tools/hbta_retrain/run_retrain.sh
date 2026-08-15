@@ -26,6 +26,7 @@ cd "$(dirname "$0")"
 H5="data_100Hz.h5"          # shipped in this tar (2.4 GB, CC-BY-4.0)
 VAE_EPOCHS="${HBTA_VAE_EPOCHS:-60}"
 LSTM_EPOCHS="${HBTA_LSTM_EPOCHS:-40}"
+DEVICE="${HBTA_DEVICE:-auto}"   # auto | cpu — cpu is the NaN-divergence fallback
 
 echo "##############################################################"
 echo "# ACCEL LANE (global accelerometers) — expected CHECK (honest)"
@@ -34,10 +35,10 @@ ACC_DATA="hbta_accel"; ACC_OUT="hbta_accel_weights"
 python prep_hbta.py --h5 "$H5" --out "$ACC_DATA" --channels AG
 python models/vibration/train_vae_ocsvm.py \
     --data "$ACC_DATA/healthy_windows.npy" --mode raw \
-    --epochs "$VAE_EPOCHS" --outdir "$ACC_OUT"
+    --epochs "$VAE_EPOCHS" --device "$DEVICE" --outdir "$ACC_OUT"
 python models/vibration/train_lstm_ae.py \
     --data "$ACC_DATA/healthy_windows.npy" \
-    --epochs "$LSTM_EPOCHS" --outdir "$ACC_OUT"
+    --epochs "$LSTM_EPOCHS" --device "$DEVICE" --outdir "$ACC_OUT"
 python verify_hbta.py --weights "$ACC_OUT" \
     --healthy "$ACC_DATA/healthy_windows.npy" \
     --damaged "$ACC_DATA/damaged_windows.npy" \
@@ -51,10 +52,10 @@ ST_DATA="hbta_strain"; ST_OUT="hbta_strain_weights"
 python prep_hbta.py --h5 "$H5" --out "$ST_DATA" --channels strain
 python models/vibration/train_vae_ocsvm.py \
     --data "$ST_DATA/healthy_windows.npy" --mode features \
-    --epochs "$VAE_EPOCHS" --outdir "$ST_OUT"
+    --epochs "$VAE_EPOCHS" --device "$DEVICE" --outdir "$ST_OUT"
 python models/vibration/train_lstm_ae.py \
     --data "$ST_DATA/healthy_windows.npy" \
-    --epochs "$LSTM_EPOCHS" --outdir "$ST_OUT"
+    --epochs "$LSTM_EPOCHS" --device "$DEVICE" --outdir "$ST_OUT"
 python verify_hbta.py --weights "$ST_OUT" \
     --healthy "$ST_DATA/healthy_windows.npy" \
     --damaged "$ST_DATA/damaged_windows.npy" \
