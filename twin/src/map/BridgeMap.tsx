@@ -211,8 +211,8 @@ export const BridgeMap = memo(function BridgeMap() {
       ok.loaded = true
       addSource()
       // Fit the whole fleet (49 US regulators + the Swiss Z24 hero) so the
-      // hero pin at Nottwil is never off-screen — mirrors the offline SVG
-      // fallback's auto-fit, keeping the two map modes consistent.
+      // hero pin at the A1 near Koppigen is never off-screen — mirrors the
+      // offline SVG fallback's auto-fit, keeping the two map modes consistent.
       const bs = useStore.getState().bridges
       if (bs.length > 0) {
         let minLng = Infinity

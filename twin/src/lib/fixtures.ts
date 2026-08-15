@@ -162,9 +162,9 @@ export function generateFleet(): Bridge[] {
   })
   const hero: Bridge = {
     id: 'z24',
-    name: 'Z24 · Box Girder (Nottwil, CH — A1)',
-    lat: 47.135,
-    lng: 8.165,
+    name: 'Z24 · Box Girder (A1 near Koppigen, CH)',
+    lat: 47.136,
+    lng: 7.578,
     bhi: 82,
     state: 'GREEN',
   }

@@ -1,10 +1,11 @@
 // D2-7 georeferenced context view.  Swaps the R3F "engineering view" for a real
-// Cesium ion globe at the Z24 reference site (Nottwil, CH): real World Terrain +
-// Google Photorealistic 3D Tiles, with our modeled box-girder digital shadow and
-// its sensor nodes georeferenced over the site.  Honest by construction: the
-// terrain/buildings are real (Cesium ion / Google), the Z24 structure is the
-// model, and every caption says exactly that.  Falls back to a labeled card if
-// the token is missing or the ion tiles can't be reached (offline demo).
+// Cesium ion globe at the Z24 reference site (A1 corridor near Koppigen, CH):
+// real World Terrain + Google Photorealistic 3D Tiles, with our modeled
+// box-girder digital shadow and its sensor nodes georeferenced over the site.
+// Honest by construction: the terrain/buildings are real (Cesium ion / Google),
+// the Z24 structure is the model, and every caption says exactly that.  Falls
+// back to a labeled card if the token is missing or the ion tiles can't be
+// reached (offline demo).
 //
 // Cesium is dynamically imported so the ~30 MB package never touches the initial
 // bundle — the globe loads only when the user opens the Geo view.
@@ -91,8 +92,24 @@ export const GeoContext = memo(function GeoContext() {
         if (cancelled) return
         viewer.scene.primitives.add(tileset)
 
+        // Dev-only debug hook: expose the Cesium viewer for CDP/browser tests
+        // to introspect camera + entity state (never used in a prod bundle).
+        if (import.meta.env.DEV) {
+          ;(window as unknown as { __geoViewer: InstanceType<CesiumModule['Viewer']> }).__geoViewer = viewer
+        }
+
         const site = Z24_SITE
-        const position = Cesium.Cartesian3.fromDegrees(site.lng, site.lat, site.height)
+        // The deck elevation is FIXED above the real ground (see Z24_SITE.height
+        // in lib/geo.ts).  We deliberately do NOT sample globe.getHeight() at
+        // runtime: it returns garbage (-66 km) for many seconds before the World
+        // Terrain tile under the site loads, and then drifts with tile LOD, so
+        // the modeled structure stays put at its schematic height and the honest
+        // caption ("not to scale") owns the rest.
+        const deckH = site.height
+        if (import.meta.env.DEV) {
+          ;(window as unknown as { __geoAnchor: { deckH: number } }).__geoAnchor = { deckH }
+        }
+        const position = Cesium.Cartesian3.fromDegrees(site.lng, site.lat, deckH)
         const hpr = Cesium.HeadingPitchRoll.fromDegrees(site.headingDeg, 0, 0)
         const orientation = Cesium.Transforms.headingPitchRollQuaternion(position, hpr)
 
@@ -114,7 +131,7 @@ export const GeoContext = memo(function GeoContext() {
         const nodeEntities = GEO_NODE_OFFSETS.map((off) => {
           const p = offsetDeg(site.lng, site.lat, off, site.headingDeg)
           return viewer!.entities.add({
-            position: Cesium.Cartesian3.fromDegrees(p.lng, p.lat, site.height + Z24_BOX.depth / 2),
+            position: Cesium.Cartesian3.fromDegrees(p.lng, p.lat, deckH + Z24_BOX.depth / 2),
             point: {
               pixelSize: 11,
               color: new Cesium.ConstantProperty(Cesium.Color.fromCssColorString(stateHex(liveState))),
@@ -141,14 +158,23 @@ export const GeoContext = memo(function GeoContext() {
           for (const n of nodeEntities) if (n.point) n.point.color = new Cesium.ConstantProperty(c)
         })
 
-        // Frame the bridge: rise from the south, look down along the deck.
-        viewer.flyTo(boxEntity, {
+        // Frame the bridge: fly to an EXPLICIT camera destination computed from
+        // the site (not flyTo(entity)), so the framing never depends on the box's
+        // bounding sphere or terrain state.  Camera sits `distance` m due south
+        // of the deck looking north (heading 0), so the modeled structure is
+        // dead-center in frame with the real A1 corridor behind it.
+        const camPitchRad = Cesium.Math.toRadians(GEO_CAMERA.pitchDeg)
+        const camHoriz = GEO_CAMERA.distance * Math.cos(-camPitchRad) // ~260 m
+        const camAlt = deckH + GEO_CAMERA.distance * Math.sin(-camPitchRad) // ~150 m up
+        const cam = offsetDeg(site.lng, site.lat, camHoriz, 180)
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(cam.lng, cam.lat, camAlt),
+          orientation: {
+            heading: Cesium.Math.toRadians(GEO_CAMERA.headingDeg),
+            pitch: camPitchRad,
+            roll: 0,
+          },
           duration: 2.4,
-          offset: new Cesium.HeadingPitchRange(
-            Cesium.Math.toRadians(GEO_CAMERA.headingDeg),
-            Cesium.Math.toRadians(GEO_CAMERA.pitchDeg),
-            GEO_CAMERA.distance,
-          ),
         })
 
         if (!cancelled) setStatus({ kind: 'ready', message: '' })

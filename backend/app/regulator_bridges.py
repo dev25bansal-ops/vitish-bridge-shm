@@ -80,11 +80,14 @@ _REGULATORS: List[tuple] = [
 HERO = {
     "id": "z24",
     "name": "Z24 Benchmark Bridge (PS#99 hero)",
-    "city": "Nottwil",
-    "state": "LU",
+    "city": "Koppigen",
+    "state": "BE",
     "country": "Switzerland",
-    "lat": 47.135,
-    "lon": 8.165,
+    # Reference site: the real Z24 carried the Koppigen–Utzenstorf road across
+    # the A1 near Koppigen, canton BE (demolished 1999).  Coordinates are
+    # schematic — anchored to the A1 corridor between the two villages.
+    "lat": 47.136,
+    "lon": 7.578,
     "year_built": 1979,
     "length_m": 58,
     "kind": "post-tensioned-concrete-box-girder",

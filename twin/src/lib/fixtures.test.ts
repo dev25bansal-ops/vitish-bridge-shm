@@ -28,14 +28,14 @@ describe('generateFleet — deterministic offline fleet', () => {
     expect(generateFleet()).toHaveLength(FLEET_COUNT)
   })
 
-  it('hero z24 is first, GREEN at BHI 82, pinned at Nottwil (CH)', () => {
+  it('hero z24 is first, GREEN at BHI 82, pinned at the A1 near Koppigen (CH)', () => {
     const hero = generateFleet()[0]
     expect(hero.id).toBe('z24')
     expect(hero.name).toContain('Z24')
     expect(hero.bhi).toBe(82)
     expect(hero.state).toBe('GREEN')
-    expect(hero.lat).toBeCloseTo(47.135, 3)
-    expect(hero.lng).toBeCloseTo(8.165, 3)
+    expect(hero.lat).toBeCloseTo(47.136, 3)
+    expect(hero.lng).toBeCloseTo(7.578, 3)
   })
 
   it('is deterministic — two calls are identical', () => {
