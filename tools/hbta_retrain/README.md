@@ -28,6 +28,20 @@ conda activate fignn_env        # or: source <venv>/bin/activate
 bash run_retrain.sh
 ```
 
+> **2026-08-16 fix:** the ACCEL lane previously crashed on a CUDA VAE build
+> (`last_recon_loss=nan` → `OneClassSVM.fit` NaN error on brev's fignn_env,
+> torch 2.13.0+cu130) while training cleanly locally with the same code+data.
+> `train_vae_ocsvm.py` now clamps the VAE logvar before exp ([-10,10]), skips
+> non-finite batches, sanitizes input, and refuses NaN latents with an
+> actionable message. If a given CUDA build still diverges, force CPU:
+>
+> ```bash
+> HBTA_DEVICE=cpu bash run_retrain.sh   # CPU fallback (slower, no NaN)
+> ```
+>
+> The clamps are no-ops on the healthy path, so the honest verdicts below are
+> unchanged.
+
 That runs, in order: prep (h5 → windows) → train VAE/OCSVM → train LSTM-AE →
 verify separation by severity, for **both** sensor families:
 
@@ -39,8 +53,9 @@ verify separation by severity, for **both** sensor families:
 Outputs land in `hbta_accel_weights/` and `hbta_strain_weights/`.
 
 Optional knobs (env vars): `HBTA_CHANNELS=strain` (only the strain lane),
-`HBTA_VAE_EPOCHS`, `HBTA_LSTM_EPOCHS`. Each lane is also runnable standalone —
-see the `run_retrain.sh` header for the exact commands.
+`HBTA_VAE_EPOCHS`, `HBTA_LSTM_EPOCHS`, `HBTA_DEVICE=auto|cpu` (CPU = the
+NaN-divergence fallback). Each lane is also runnable standalone — see the
+`run_retrain.sh` header for the exact commands.
 
 ## 3 · What the verify line means (honest)
 
