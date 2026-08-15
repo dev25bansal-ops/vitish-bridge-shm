@@ -27,11 +27,15 @@ H5="data_100Hz.h5"          # shipped in this tar (2.4 GB, CC-BY-4.0)
 VAE_EPOCHS="${HBTA_VAE_EPOCHS:-60}"
 LSTM_EPOCHS="${HBTA_LSTM_EPOCHS:-40}"
 DEVICE="${HBTA_DEVICE:-auto}"   # auto | cpu — cpu is the NaN-divergence fallback
+CHANNELS="${HBTA_CHANNELS:-all}"  # all | accel | strain — run one lane or both
+ACC_DATA="hbta_accel"; ACC_OUT="hbta_accel_weights"   # lane dirs (constants)
+ST_DATA="hbta_strain"; ST_OUT="hbta_strain_weights"
+ACC_VERDICT="skipped"; ST_VERDICT="skipped"  # set below unless the lane is skipped
 
+if [[ "$CHANNELS" == "all" || "$CHANNELS" == "accel" ]]; then
 echo "##############################################################"
 echo "# ACCEL LANE (global accelerometers) — expected CHECK (honest)"
 echo "##############################################################"
-ACC_DATA="hbta_accel"; ACC_OUT="hbta_accel_weights"
 python prep_hbta.py --h5 "$H5" --out "$ACC_DATA" --channels AG
 python models/vibration/train_vae_ocsvm.py \
     --data "$ACC_DATA/healthy_windows.npy" --mode raw \
@@ -48,11 +52,12 @@ python verify_hbta.py --weights "$ACC_OUT" \
 # finding on this lane, so its exit code must NOT abort the script (set -e).
 echo "  [accel] verify exit=$ACC_VERDICT (0=separates, 2=check — honest finding)"
 echo
+fi
 
+if [[ "$CHANNELS" == "all" || "$CHANNELS" == "strain" ]]; then
 echo "##############################################################"
 echo "# STRAIN LANE (strain gages) — expected SEPARATES (measured)"
 echo "##############################################################"
-ST_DATA="hbta_strain"; ST_OUT="hbta_strain_weights"
 python prep_hbta.py --h5 "$H5" --out "$ST_DATA" --channels strain
 python models/vibration/train_vae_ocsvm.py \
     --data "$ST_DATA/healthy_windows.npy" --mode features \
@@ -67,6 +72,7 @@ python verify_hbta.py --weights "$ST_OUT" \
     && ST_VERDICT=0 || ST_VERDICT=$?
 echo "  [strain] verify exit=$ST_VERDICT (0=separates, 2=check — honest finding)"
 echo
+fi
 
 echo "DONE. Artifacts: $ACC_OUT/ (accel), $ST_OUT/ (strain)."
 echo "Verdict lines above are the honest findings; do not massage them."
