@@ -35,6 +35,10 @@ _EPS = 1e-12
 _BAND_LO = 0.5
 _BAND_HI = 10.0
 
+# numpy>=2.0 renamed trapz -> trapezoid; resolve once so this module runs on
+# both (server venvs often carry numpy<2.0). Kept pure-numpy, no extra deps.
+_trapz = getattr(np, "trapezoid", None) or np.trapz
+
 
 def periodogram(x: np.ndarray, fs: float = 100.0) -> tuple[np.ndarray, np.ndarray]:
     """Hann-windowed one-sided PSD via numpy FFT.
@@ -84,7 +88,7 @@ def _band_power(f: np.ndarray, p: np.ndarray, lo: float = _BAND_LO, hi: float = 
         return 0.0
     # approximate integral with trapezoid over the selected band
     fsel, psel = f[m], p[m]
-    return float(np.trapezoid(psel, fsel)) if fsel.size >= 2 else float(psel[0])
+    return float(_trapz(psel, fsel)) if fsel.size >= 2 else float(psel[0])
 
 
 def _spectral_entropy(p: np.ndarray) -> float:
