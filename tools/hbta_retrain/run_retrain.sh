@@ -42,7 +42,11 @@ python models/vibration/train_lstm_ae.py \
 python verify_hbta.py --weights "$ACC_OUT" \
     --healthy "$ACC_DATA/healthy_windows.npy" \
     --damaged "$ACC_DATA/damaged_windows.npy" \
-    --labels "$ACC_DATA/labels_damaged.npy"
+    --labels "$ACC_DATA/labels_damaged.npy" \
+    && ACC_VERDICT=0 || ACC_VERDICT=$?
+# verify_hbta exits 2 on CHECK, 0 on SEPARATES — a CHECK is the EXPECTED honest
+# finding on this lane, so its exit code must NOT abort the script (set -e).
+echo "  [accel] verify exit=$ACC_VERDICT (0=separates, 2=check — honest finding)"
 echo
 
 echo "##############################################################"
@@ -59,8 +63,13 @@ python models/vibration/train_lstm_ae.py \
 python verify_hbta.py --weights "$ST_OUT" \
     --healthy "$ST_DATA/healthy_windows.npy" \
     --damaged "$ST_DATA/damaged_windows.npy" \
-    --labels "$ST_DATA/labels_damaged.npy"
+    --labels "$ST_DATA/labels_damaged.npy" \
+    && ST_VERDICT=0 || ST_VERDICT=$?
+echo "  [strain] verify exit=$ST_VERDICT (0=separates, 2=check — honest finding)"
 echo
 
 echo "DONE. Artifacts: $ACC_OUT/ (accel), $ST_OUT/ (strain)."
-echo "Verdict lines are the honest findings; do not massage them."
+echo "Verdict lines above are the honest findings; do not massage them."
+echo "SUMMARY — ACCEL verify=$ACC_VERDICT | STRAIN verify=$ST_VERDICT"
+echo "  (0=separates, 2=check; a check is the honest finding, not a run failure)"
+exit 0
