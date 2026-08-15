@@ -56,7 +56,8 @@ fi
 
 if [[ "$CHANNELS" == "all" || "$CHANNELS" == "strain" ]]; then
 echo "##############################################################"
-echo "# STRAIN LANE (strain gages) — expected SEPARATES (measured)"
+echo "# STRAIN LANE (strain gages) — expected CHECK (score-level; feature RMS"
+echo "#                        drop ~50% not 2σ-clean — honest)"
 echo "##############################################################"
 python prep_hbta.py --h5 "$H5" --out "$ST_DATA" --channels strain
 python models/vibration/train_vae_ocsvm.py \
