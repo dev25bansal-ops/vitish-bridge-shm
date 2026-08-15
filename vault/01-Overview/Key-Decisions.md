@@ -19,6 +19,7 @@ The decisions that changed the research report (master plan §1). These are froz
 | 8 | **Reframed Morbi claim** — motivation, not validation | Morbi had no sensors (untestable) and is the *opposite* of Z24's induced damage; the reframe turns a kill-shot into differentiation |
 | 9 | **Corrected cost math** — pilot ~$980, scaled ~$260/bridge/yr, SaaS $25–30/mo | The old $300 / $5–15 numbers were wrong arithmetic a business-savvy judge would do |
 | 10 | **Corrected facts** — Morbi 135 (some tallies 141), suspension bridge, drop "4 cables" and "18 days" | Unverified claims get dismantled on stage; see [[Verified-Facts]] |
+| 11 | **NO LIVE badge at the demo** — no board/firmware is flashed and bench-tested, so the twin must not claim a live edge node | A live badge with no hardware behind it is the one overclaim a judge can poke with a single question. Decision (2026-08-15, ROADMAP line 107): the hero bridge streams the benchmark through the real MQTT→WebSocket pipeline (already "live" in the honest sense), the ESP32/ESP-01S edge node is narrated as the H8-gated stretch goal, and the backend's `edge_node.py` monitor (gate 13) proves the ingestion path is ready the moment a board is in hand. Q&A Q6 worded to match — see [[QandA-Prep]] |
 
 ## The single biggest insight
 

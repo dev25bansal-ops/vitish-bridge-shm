@@ -46,6 +46,7 @@ tags: [home, vitish-2026, shm]
 - 🚀 **Startup pivot** — full company/YC project written → [[Company-Project]]
 - ✅ Real `crack_seg.pt` trained (YOLO26s-seg, 4,081 CC0 CrackSeg9k) — [[CV-Model]]
 - 🔜 Next: ESP32 node (deferred hardware) + pilot LOIs
+- 🗂️ **Post-hackathon execution plan** (ROADMAP §4, lines 115-122) → [[PostHackathon-Prep]]
 
 ---
 

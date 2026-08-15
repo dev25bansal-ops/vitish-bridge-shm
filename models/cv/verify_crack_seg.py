@@ -130,6 +130,9 @@ def main(argv: list[str] | None = None) -> int:
     print(fmt(ycl))
 
     print("\n=== heuristic mode (Canny fallback) ===")
+    # Deliberate: a weights path that does not exist forces CrackDetector's
+    # always-available OpenCV Canny/contour fallback branch (inference.py) so we
+    # can measure the baseline the demo compares against. Not a missing file.
     heur = CrackDetector(weights_path=Path("no_such_weights.pt"))
     hc = run_leg(heur, cracked, "heuristic/cracked")
     hcl = run_leg(heur, clean, "heuristic/clean")

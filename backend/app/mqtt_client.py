@@ -258,9 +258,6 @@ class Subscriber:
         self.client.on_disconnect = self._on_disconnect
         self._thread: Optional[threading.Thread] = None
 
-    def add_handler(self, topic: str, cb: Callable) -> None:
-        self.handlers[topic] = cb
-
     def _on_connect(self, client, userdata, flags, reason_code, properties) -> None:
         # paho 2.1.0: reason_code is a ReasonCode — use .value (int() raises TypeError)
         if getattr(reason_code, "value", -1) == 0:

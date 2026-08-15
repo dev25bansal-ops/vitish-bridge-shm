@@ -35,7 +35,7 @@ This is not a mockup. The pipeline ingests, fuses, and displays **real benchmark
 
 ```bash
 # 1. infra (Mosquitto MQTT + Postgres) — optional; the stack runs memory-only without it
-docker compose up -d --build
+docker compose up -d   # images only (mosquitto + postgres); no build step
 
 # 2. backend + simulator + WS bridge + API + auto demo timeline
 cd backend && python app/run_all.py --demo

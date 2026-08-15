@@ -37,10 +37,6 @@ _DEGRADE_AFTER = 3        # consecutive Postgres failures before latching to mem
 _RECONNECT_EVERY = 10.0   # seconds between reconnect attempts once degraded
 
 
-def _clamp(v, lo=0.0, hi=1.0):
-    return max(lo, min(hi, v))
-
-
 # ---------------------------------------------------------------------------
 # interface
 # ---------------------------------------------------------------------------

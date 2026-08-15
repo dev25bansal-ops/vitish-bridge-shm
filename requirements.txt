@@ -1,6 +1,6 @@
 # Python backend + ML (Python 3.10+; dev machine has 3.14 + torch 2.12+cu130)
 paho-mqtt>=2.0
-numpy>=1.26
+numpy>=2.0            # np.trapezoid (renamed from np.trapz) is numpy-2.0-only
 scipy>=1.11
 pandas>=2.1
 scikit-learn>=1.4
@@ -13,4 +13,3 @@ websockets>=12
 pydantic>=2.6
 psycopg2-binary>=2.9
 python-dotenv>=1.0
-redis>=5.0

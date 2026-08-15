@@ -50,12 +50,10 @@ class HeuristicAnomalyScorer:
         fs: float = 100.0,
         n_healthy_max: int = 30,
         rms_trigger_rel: float = 0.30,
-        rms_trigger_sigma: float = 3.0,
     ) -> None:
         self.fs = float(fs)
         self.n_healthy_max = int(n_healthy_max)
         self.rms_trigger_rel = float(rms_trigger_rel)
-        self.rms_trigger_sigma = float(rms_trigger_sigma)
         self._win_n = 1024  # original time-domain length (updated on feed)
         self._psds: list[np.ndarray] = []
         self._rmss: list[float] = []
@@ -63,8 +61,6 @@ class HeuristicAnomalyScorer:
         self._template_std: np.ndarray | None = None
         self._d_med = 0.05
         self._d_scale = 0.10
-        self._base_rms = 0.0
-        self._base_rms_std = 0.0
         self.n_healthy = 0
 
     # ------------------------------------------------------------------ build
@@ -132,9 +128,9 @@ class HeuristicAnomalyScorer:
         f, p = periodogram(window, self.fs)
         d = self._spectral_distance(p)
 
-        # relative RMS deviation vs healthy baseline
+        # relative RMS deviation vs the healthy baseline median
         cur_rms = rms(window)
-        base = max(self._base_rms, np.median(self._rmss) if self._rmss else 0.0)
+        base = float(np.median(self._rmss)) if self._rmss else 0.0
         rms_dev = abs(cur_rms - base) / max(base, _EPS)
 
         # composite distance, then self-calibrated z-score + sigmoid mapping.
@@ -158,9 +154,7 @@ class HeuristicAnomalyScorer:
             return False
         base = np.median(self._rmss) if self._rmss else 0.0
         rel = abs(rms(window) - base) / max(base, _EPS)
-        return bool(rel > self.rms_trigger_rel or
-                    (self._base_rms_std > _EPS and
-                     abs(rms(window) - self._base_rms) > self.rms_trigger_sigma * self._base_rms_std))
+        return bool(rel > self.rms_trigger_rel)
 
     # --------------------------------------------------------------- helpers
     def _spectral_entropy_norm(self, psd: np.ndarray) -> float:

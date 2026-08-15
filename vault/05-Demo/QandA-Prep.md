@@ -43,7 +43,9 @@ created: 2026-08-13
 
 **Q6 — Is any of this live? Show a packet from your ESP32. Where did the 49 bridges come from?**
 
-"We disclose it openly: the hero bridge streams the benchmark through the real MQTT-to-WebSocket pipeline; the ESP32 path is shown live if the bench passes (and it passed today / we ran it in the lab). The 49 other bridges are illustrative — real locations from US NBI/OSM with simulated health — shown to demonstrate the regulator view. The screen labels every source."
+"We disclose it openly: the hero bridge streams the benchmark through the real MQTT-to-WebSocket pipeline — that *is* the live path you're watching, and the screen labels every source. The ESP32 edge node is our H8-gated stretch goal: the firmware and the backend monitor are written and the ingestion path is gate-tested, but no board is flashed and bench-tested today, so we won't show a fake 'live' badge. The 49 other bridges are illustrative — real locations from US NBI/OSM with simulated health — shown to demonstrate the regulator view."
+
+> 2026-08-15 — Q6 aligned with [[Key-Decisions]] #11 (NO LIVE badge): the old "ESP32 path is shown live if the bench passes (and it passed today…)" text was removed — it overpromised on hardware that isn't in hand. The ESP32 narration now matches decision #11 verbatim.
 
 **Q7 — How did you compute F1 0.85? Didn't you inflate it by labeling everything after damage onset positive?**
 

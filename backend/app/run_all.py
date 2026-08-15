@@ -259,7 +259,9 @@ def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
         driver.stop()
     ws.stop()
     fusion.stop()
-    stiffness_mod.get_tracker() and stiffness_mod.get_tracker().stop()
+    tracker = stiffness_mod.get_tracker()
+    if tracker is not None:
+        tracker.stop()
     bus.unsubscribe(recorder_token)
     if live_recorder_token is not None:
         bus.unsubscribe(live_recorder_token)
