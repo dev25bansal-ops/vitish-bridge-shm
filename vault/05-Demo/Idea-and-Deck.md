@@ -40,7 +40,9 @@ created: 2026-08-15
    means human review".
 4. **How it detects damage (vibration)** — real Z24 benchmark replay through the
    real pipeline; mean+3σ healthy envelope; damage arc 87.1 → AMBER 67.5 → RED
-   33.6, recovery returns to GREEN. (Honest: trained ensemble is inert; the
+   33.6, recovery returns to GREEN. (Honest: the trained VAE/OCSVM ensemble is
+   ACTIVE on shipped state — it separates real damaged Z24 windows, but the
+   demo-scale synthetic stream stays inside its healthy envelope, so the
    deterministic floor carries the arc.)
 5. **How it detects damage (vision + load)** — real YOLO26s-seg crack segmenter
    (trained on CrackSeg9k) → regulator condition card; load sub-index fuses

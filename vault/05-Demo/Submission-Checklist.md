@@ -39,7 +39,8 @@ created: 2026-08-15
 
 ## The honesty card (tape to the laptop lid)
 
-> BHI 87.1 → 67.5 → 33.6 · trained ensemble inert (floor carries arc) · live feed
+> BHI 87.1 → 67.5 → 33.6 · trained ensemble ACTIVE on real Z24 but floor carries
+> the demo arc (demo stream sits in its healthy envelope) · live feed
 > = demo of ingestion (never fused) · **NO LIVE badge** (ESP32 H8-gated stretch) ·
 > never quote 4 cables / 18 days / EU mandate / 60 m / 690 citations / mAP 0.65.
 

@@ -136,9 +136,13 @@ def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
     ensemble (``models/vibration/demo_predictor``) may ADD a trained-model push
     -- but ONLY as its envelope-relative deviation (see demo_predictor), so an
     uninformative or missing model contributes ~0 and can never break the arc.
-    Currently (ROADMAP line 40 relabel) the shipped trained ensemble is
-    EXPERIMENTAL and INERT — its scaler is degenerate, so `trained_push` is
-    0.0 and this floor alone carries the demo arc.
+    On shipped state (2026-08-15 non-degenerate retrain, ROADMAP line 117) the
+    trained ensemble is ACTIVE — mode `envelope-floor+push`, real separation on
+    Z24 (damaged dev mean ~0.09-0.12 vs healthy ~0, measured).  At demo scale
+    the synthetic stream stays inside the healthy envelope, so `trained_push`
+    stays ~0 and this floor carries the demo arc.  The degenerate-scaler guard
+    (ROADMAP line 40) remains: a future degenerate scaler is honestly declared
+    INERT and contributes no push.
     """
     arr = np.asarray(window, dtype=np.float64).reshape(-1)
     if arr.size < 64:

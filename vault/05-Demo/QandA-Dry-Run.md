@@ -35,8 +35,10 @@ created: 2026-08-15
 ## Standing guardrails (repeat from [[QandA-Prep]])
 
 - Never claim a number or feature stronger than what's in the repo.
-- Trained ensemble is **experimentally inert** (scaler near-zero-variance →
-  push 0.0); the deterministic spectral floor carries the arc. Say exactly that.
+- Trained ensemble is **ACTIVE on shipped state** (non-degenerate retrain): it
+  separates real damaged Z24 windows, but the demo-scale synthetic stream sits
+  inside its healthy envelope, so `trained_push` stays ~0 and the deterministic
+  spectral floor carries the arc. Say exactly that.
 - Live feed = **demo of live ingestion** (public broker, unvetted, `live-demo`,
   never fused into z24 BHI).
 - **No LIVE badge** — ESP32 is the H8-gated stretch ([[Key-Decisions]] #11);

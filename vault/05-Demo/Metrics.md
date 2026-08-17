@@ -44,13 +44,14 @@ Never print: $560, $300, $5–15/mo, $10–50/mo.
 
 Related: [[Storyboard]] · [[CV-Model]] · [[Vibration-Model]] · [[BHI-Formula]]
 
-## Measured — 2026-08-15 (`scripts/metrics_sheet.py`)
+## Measured — 2026-08-16 (`scripts/metrics_sheet.py`)
 
 - **Demo scenarios**: precision 1.0 · recall 1.0 · F1 1.0 (healthy mean 0.0737 vs rupture mean 0.4771, threshold mean+3σ = 0.1914).
-- **Z24 benchmark**: precision 0.5263 · recall 0.0016 · F1 0.0032 — honest current state; the synthetic-tuned floor does not separate real Z24 scenarios, the VAE/OCSVM ensemble is inert (Q&A Q3/Q7).
+- **Z24 benchmark**: precision 0.5263 · recall 0.0016 · F1 0.0032 — honest current state; the synthetic-tuned floor does not separate real Z24 scenarios, the trained VAE/OCSVM ensemble is ACTIVE on shipped state — mode `VAE/OCSVM (vae.pt, mode=features, latent=16) + LSTM-AE · envelope-floor+push`; real Z24 separation (damaged dev mean ~0.09-0.12 vs healthy ~0, measured) (Q&A Q3/Q7).
 - **crack_seg val**: mAP@0.5 0.0826 (full PR curve; cross-check ultralytics val 0.074) · @0.25 precision 0.4256 · recall 0.057 · image-level recall 0.9747 (500/513).
 
 ---
+
 
 
 

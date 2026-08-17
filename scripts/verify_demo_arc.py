@@ -14,10 +14,12 @@ Storyboard / Build-Log:
 against the REAL production pipeline:
 
   * real detector  ``backend/app/anomaly.get_anomaly`` with its SHIPPED state —
-    NOT the ``trained_push = 0`` stub the shape test uses.  Today the trained
-    VAE/OCSVM ensemble is honestly INERT (degenerate shipped scaler), so the
-    deterministic spectral floor carries the arc; if the ensemble is ever
-    revived, this script re-pins WITH it active and will flag the new values.
+    NOT the ``trained_push = 0`` stub the shape test uses.  The trained
+    VAE/OCSVM ensemble is ACTIVE on shipped state (2026-08-15 non-degenerate
+    retrain, mode `envelope-floor+push`), but the demo-scale synthetic stream
+    stays inside the healthy envelope, so `trained_push` stays ~0 and the
+    deterministic spectral floor carries the arc; if the ensemble ever fires at
+    demo scale, this script re-pins WITH it active and will flag the new values.
   * real fusion     ``backend/app/fusion.FusionService`` on the in-process bus
   * real replay     seeded ``SyntheticPlayer`` (pink noise + first-mode
     resonance at the real Z24 healthy fundamental 3.80 Hz), the same
