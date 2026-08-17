@@ -346,7 +346,8 @@ button {
 }
 
 .subbar-block,
-.trend-block {
+.trend-block,
+.rul-block {
   margin-top: 10px;
 }
 
@@ -357,6 +358,36 @@ button {
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 6px;
+}
+
+/* S1 RUL decision band (HealthPanel) — "years to NBI<=4" under a prior. */
+.rul-band {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+.rul-label {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+.rul-value {
+  font-weight: 600;
+}
+
+.rul-honesty {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--border);
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .subbar {
@@ -665,6 +696,100 @@ button {
   padding: 3px 8px;
   border-radius: 4px;
   pointer-events: none;
+}
+
+/* --- S1 fleet-priority card (overlays both map modes) -------------------- */
+.fleet-priority {
+  position: absolute;
+  top: 30px;
+  left: 8px;
+  z-index: 2;
+  width: min(252px, calc(100% - 16px));
+  max-height: 46%;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.fp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.fp-src {
+  font-size: 9px;
+  color: var(--muted);
+}
+
+.fp-src.live {
+  color: var(--green);
+}
+
+.fp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fp-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.fp-rank {
+  width: 14px;
+  text-align: right;
+  color: var(--muted);
+  flex: 0 0 14px;
+}
+
+.fp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 7px;
+}
+
+.fp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.fp-inspect {
+  flex: 0 0 auto;
+  color: var(--amber);
+}
+
+.fp-band {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.fp-honesty {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+  font-size: 9px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .map-fallback {

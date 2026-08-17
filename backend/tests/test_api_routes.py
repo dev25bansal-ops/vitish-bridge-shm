@@ -1,9 +1,9 @@
 """Item 15 verification — HTTP route tests for the newer endpoints.
 
 Covers /api/live, /api/manifest, /api/bridge/{id}/stiffness, /seeded-defect,
-/deterioration, /condition (default + run_seg with a fake detector),
-/api/config — status codes, payload shape, and the 'tracker/simulator not
-running' guards (plus the running paths via fake singletons).
+/deterioration, /fleet/priority, /condition (default + run_seg with a fake
+detector), /api/config — status codes, payload shape, and the 'tracker/
+simulator not running' guards (plus the running paths via fake singletons).
 """
 import sys, tempfile
 from dataclasses import replace
@@ -88,6 +88,51 @@ r = client.get("/api/bridge/reg-01/deterioration?years=10&rating=sub")
 _check("deterioration regulator 200", r.status_code == 200, f"{r.status_code} {r.text[:120]}")
 r = client.get("/api/bridge/nope/deterioration")
 _check("deterioration missing -> 404", r.status_code == 404, str(r.status_code))
+
+# --- /api/fleet/priority (S1 RUL decision surface) ---------------------------
+r = client.get("/api/fleet/priority?limit=8")
+b = r.json()
+_check("fleet/priority 200", r.status_code == 200, f"{r.status_code} {b.get('detail')}")
+_check("fleet/priority shape", all(k in b for k in
+       ("count", "limit", "rows", "priors_label", "note")), str(list(b.keys())))
+_check("fleet/priority count 50", b.get("count") == 50, str(b.get("count")))
+_check("fleet/priority respects limit", len(b["rows"]) == 8, str(len(b.get("rows", []))))
+_row0 = b["rows"][0]
+_check("fleet/priority row shape", all(k in _row0 for k in
+       ("rank", "id", "name", "state", "bhi", "current_condition",
+        "next_inspection_year", "years_to_poor", "live", "hero")),
+       str(list(_row0.keys())))
+_check("fleet/priority band fields", all(k in _row0["years_to_poor"] for k in
+       ("already_poor", "p10", "expected", "p90", "horizon")),
+       str(list(_row0["years_to_poor"].keys())))
+# rank == array index + 1 (sorted most urgent first)
+_check("fleet/priority ranks consecutive",
+       [_row0["rank"]] + [x["rank"] for x in b["rows"][1:]] == list(range(1, 9)),
+       str([x["rank"] for x in b["rows"]]))
+# next_inspection_year is non-decreasing across the ranked prefix (nulls last)
+_ins = [x["next_inspection_year"] for x in b["rows"]]
+_ok_sort = all(a is None or (b_ is not None and a <= b_)
+               for a, b_ in zip(_ins, _ins[1:]))
+_check("fleet/priority urgent-first sort", _ok_sort, str(_ins))
+_check("fleet/priority honesty label", "not a certified RUL" in b["note"]
+       and "illustrative" in b["note"], b["note"][:160])
+# The live hero bridge is GREEN (least urgent) — it must NOT be in the top-8,
+# but must be present and flagged live in the full ranked list.
+r = client.get("/api/fleet/priority?limit=50")
+b50 = r.json()
+_hero_row = next((x for x in b50["rows"] if x["hero"]), None)
+if _hero_row is None:
+    _check("fleet/priority hero present", False, "no hero row in full list")
+else:
+    _check("fleet/priority hero present + live", _hero_row.get("live") is True,
+           str(_hero_row))
+_check("fleet/priority hero NOT in top-8 (healthy = low priority)",
+       all(not x["hero"] for x in b["rows"]), "hero wrongly ranked urgent")
+# bad query params -> 422 (ge=1 / pattern)
+r = client.get("/api/fleet/priority?limit=0")
+_check("fleet/priority limit<1 -> 422", r.status_code == 422, str(r.status_code))
+r = client.get("/api/fleet/priority?rating=bogus")
+_check("fleet/priority bad rating -> 422", r.status_code == 422, str(r.status_code))
 
 # --- /api/bridge/z24/condition (default = live-cv-subindex) --------------------
 r = client.get("/api/bridge/z24/condition")

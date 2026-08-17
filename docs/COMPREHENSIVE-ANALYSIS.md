@@ -1,6 +1,6 @@
 # VITISH-2026 Comprehensive Project Analysis
 
-**Date:** 2026-08-16 · **Scope:** full project — build, data & training, hardware · **Commit reviewed:** `303f776` (posthack) + `c84fe35` (geo) on `main` · **Addendum (2026-08-16):** §117 follow-up — HBTA detection improvement levers + verified acoustic-emission data catalog (Category 8) · **Addendum (2026-08-17):** NOW items 1–6 landed + TEST-F3 (see §7.6) — gate count now **18**, all passing
+**Date:** 2026-08-16 · **Scope:** full project — build, data & training, hardware · **Commit reviewed:** `303f776` (posthack) + `c84fe35` (geo) on `main` · **Addendum (2026-08-16):** §117 follow-up — HBTA detection improvement levers + verified acoustic-emission data catalog (Category 8) · **Addendum (2026-08-17):** NOW items 1–6 landed + TEST-F3 (see §7.6), and **30-day item 7 (S1 RUL decision surface) DONE** — gate count now **18**, all passing
 
 ## How this was produced
 
@@ -15,6 +15,7 @@ A 22-agent analysis workflow ran over the whole repository (all lenses plus inde
 ### 1.1 S1 — Ship the RUL / "years to NBI≤4" decision surface *(High · P1 · 1–2 days)*
 **The gap:** the regulator's question is *"which bridge first, and when"*, not a prettier health score — and every piece already exists. `deterioration.py:150-158` computes the first year P(NBI≤4)≥25%; `project()` returns a year-by-year fan with p10/p90; `/api/bridge/{id}/deterioration` already serves it and the twin polls it every 5s.
 **Do:** add a "projected years to NBI≤4" band (expected + p10/p90 + next-inspection year) to the HealthPanel, and a next-inspection/priority sort to the fleet map. Label honestly: *"Markov projection, LTBP fleet prior — not certified RUL."* This is the most procurement-relevant surface the repo can ship without a partner.
+**Status ✅ DONE 2026-08-17:** band in the HealthPanel + `/api/fleet/priority` ranking + `FleetPriorityPanel` overlay on the map + mandatory honesty label on every render + never-quote row added (see §7.6 item 7).
 
 ### 1.2 S2 — Make the IBMS CRN 0–6 calibration the strategic lock-in *(High · P1 · 2–4 weeks)*
 **The gap:** the pitch positions VITISH as "the calibration layer of the national IBMS," but there is no CRN↔BHI path in code. IRICEN/IBMS uses the numeric CRN 0–6 scale, and the 30 Sep 2026 MoRTH survey is the dated procurement hook.
@@ -251,7 +252,7 @@ The publishable nucleus already exists (Z24 mirroring, CrackSeg9k/SDNET conversi
 
 ### 7.2 Risks (things that would hurt the brand if mishandled)
 
-- **RUL overclaim:** "years to NBI≤4" must read as projection-under-a-prior, never certified remaining life. Label on every render and pitch mention; extend the disclosure beat to the ranking table.
+- **RUL overclaim:** "years to NBI≤4" must read as projection-under-a-prior, never certified remaining life. Label on every render and pitch mention; extend the disclosure beat to the ranking table. **Remediated 2026-08-17 (S1):** the mandatory label is on the HealthPanel band and the fleet-priority card, and the ranking table itself carries "49 regulators illustrative — not certified RUL" (see §7.6 item 7).
 - **Demo-vs-pitch ML gap (no lens framed this as narrative risk):** the trained ensemble is **invisible at demo scale** — amplitude-saturated, arc floor-carried by construction (gate-16 LEG D). Company-Project line 71 lists the trained path as "REAL + verified," but a rigorous judge watching the demo sees the AI never move the needle on the only stream on screen. Either rephrase line 71 to "separates on real Z24 data; the live-demo overlay is floor-carried," or make the trained path fire at demo scale (the temperature-invariant/scale-robust retrain).
 - **The $980 pilot-kit SKU is unbuildable today:** the only hardware is a BIST-tone ESP-01S (no accelerometer, no ADC); no camera node or validated gateway. The pilot-kit BOM needs a real accelerometer node + cost truthing before the "deploy in a day / ~$980" and "$10-class wireless accelerometer" claims survive contact with a pilot.
 - **Geographic mismatch:** the fleet map shows 50 famous **US** bridges while the GTM is MoRTH/India; the LTBP/NBI priors are FHWA/US. Relabel honestly ("illustrative international reference network") or build an Indian illustrative fleet with IRC-118 ratings, and plan an India condition-data path.
@@ -290,7 +291,7 @@ AR field app (showcase only), GNN sparse-sensor localizer (no dataset/buyer), **
 6. ✅ CI: twin vitest + lint + production build. — plus **TEST-F3** no-silent-SKIP (below).
 
 **30 days — product surfaces + verifiable CI, sequenced against the 30 Sep IBMS deadline:**
-7. RUL decision surface: fleet ranking + per-bridge P(severe) band with honest labels + never-quote list update.
+7. ✅ RUL decision surface: fleet ranking + per-bridge P(severe) band with honest labels + never-quote list update. — **S1 DONE (2026-08-17):** `deterioration.py` now returns a `years_to_poor` band (first year each p10/expected/p90 series crosses NBI≤4, `already_poor` when the current condition is already ≤4); new `GET /api/fleet/priority` ranks all 50 bridges by next-inspection year (most urgent first, hero GREEN last) with the honest "49 regulators seeded/illustrative — not a certified RUL" label; the HealthPanel carries the "Projected years to NBI≤4 · decision band" (band + expected + next-inspection year + mandatory honesty label); the fleet map carries a `FleetPriorityPanel` overlay (live `/api/fleet/priority` poll with an offline deteriorationFixture mirror) — during the demo arc the hero climbs the ranking as it degrades. Q&A landmine table updated.
 8. Open-Meteo real site temperature with offline fallback + `temp_source` manifest flip.
 9. ✅ CI artifact-restore job running `test_trained_path` + deconfounding LEG C — no silent SKIP. — **TEST-F3 DONE:** small trained weights (`vae.pt`/`ocsvm.pkl`/`scaler.pkl`/`lstm_ae.pt` + meta, ~235 KB) and a real-Z24 fixture (`data/z24/fixture/`, 4 groups ≈ 2.8 MB, built by `scripts/make_z24_fixture.py`) are COMMITTED; both trained gates run real evidence on a fresh clone/CI (`TRAINED_REAL_DATA=RUN(fixture|full)`), and `run_tests.sh` **fails under `CI=1`** if either prints `TRAINED_REAL_DATA=SKIP`. LEG C's healthy claim was honestly split — label {0} (envelope's own state) stays ~0; healthy labels {1} and {6} are pinned as documented state-confounds (max ~0.31/~0.37) rather than hidden.
 10. IRC-118 / IBMS condition-report generator (draft-style, explicitly not certified).

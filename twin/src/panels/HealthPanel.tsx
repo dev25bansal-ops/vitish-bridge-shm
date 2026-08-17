@@ -11,6 +11,7 @@ import {
 import { useStore, BHI_W, WINDOW_N, WINDOW_S } from '../store'
 import type { HealthState } from '../store'
 import { BHI_AMBER, BHI_GREEN } from '../store'
+import { yearsToPoor, formatBand } from '../lib/rulBand'
 
 // --- BHI gauge (SVG arc, 0-100, color bands) -------------------------------
 function polar(cx: number, cy: number, r: number, angleDeg: number): [number, number] {
@@ -81,6 +82,7 @@ function SubBar({ label, value, weight }: { label: string; value: number; weight
 export const HealthPanel = memo(function HealthPanel() {
   const live = useStore((s) => s.live)
   const bhiTrend = useStore((s) => s.bhiTrend)
+  const det = useStore((s) => s.deterioration)
 
   // D2-9: uncertainty envelope on the trend — the current measurement
   // uncertainty u (±) is drawn as a band around every point, honestly labeled.
@@ -94,6 +96,16 @@ export const HealthPanel = memo(function HealthPanel() {
       })),
     [bhiTrend, live.u],
   )
+
+  // S1: "years to NBI<=4" decision band — first year each projection series
+  // (p10 bad-side / expected / p90 good-side) crosses NBI 4, from the same fan
+  // the DeteriorationPanel plots.  Band-of-years under a prior, never a
+  // certified remaining life (label below).
+  const band = useMemo(
+    () => yearsToPoor(det.projection, det.currentCondition),
+    [det.projection, det.currentCondition],
+  )
+  const hasBand = det.projection.length > 0
 
   return (
     <section className="panel">
@@ -117,6 +129,31 @@ export const HealthPanel = memo(function HealthPanel() {
             <span className="meta-unit">s · {WINDOW_N}</span>
           </div>
         </div>
+      </div>
+
+      {/* S1 RUL decision surface — the regulator's question is "which bridge
+          first, and when".  Honest framing stays right on the panel. */}
+      <div className="rul-block">
+        <div className="block-title">Projected years to NBI≤4 · decision band</div>
+        {hasBand ? (
+          <>
+            <div className="rul-band">
+              <span className="rul-label">band · p10–p90</span>
+              <span className="rul-value">{formatBand(band)}</span>
+            </div>
+            <div className="rul-band">
+              <span className="rul-label">next inspect</span>
+              <span className="rul-value">
+                {det.nextInspectionYear !== null ? `yr ${det.nextInspectionYear}` : '—'}
+              </span>
+            </div>
+            <div className="rul-honesty">
+              Markov projection, LTBP fleet prior — not certified RUL
+            </div>
+          </>
+        ) : (
+          <div className="chart-empty">Markov projection not available</div>
+        )}
       </div>
 
       <div className="subbar-block">

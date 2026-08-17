@@ -19,6 +19,7 @@ created: 2026-08-15
 | **Morbi 4 cables / 18 days** | Never quote "4 corroded cables" or "18 days before failure". Say: **rusted cables, broken anchors, loose bolts, heavy new flooring** (forensic report); toll ~135 (55 children) / Wikipedia "at least 141". |
 | **EU mandate** | No EU/UK/Netherlands smart-sensor mandate is verified — do not claim one. |
 | **690 citations / mAP 0.65** | Both were corrected away. Z24 environmental paper has **>1,000 citations**; no mAP 0.65 claim exists in the repo. |
+| **RUL / "years to NBI≤4"** | Never quote "N years of life left" or read the fleet ranking as real inspection data. Say: **Markov projection under an empirical LTBP fleet prior (small n, 44 FHWA pilot bridges) — a probabilistic band, not certified remaining life**; the 49 regulators are seeded/illustrative, so the ranking is a "prior-driven prioritization view" (1 live + 49 illustrative). The HealthPanel band + fleet-priority card carry this label verbatim ([[S1]]) — stay consistent with it on stage. |
 
 ## The three numbers to state deliberately (memorized)
 

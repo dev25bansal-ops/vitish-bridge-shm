@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import type { TwinState } from '../store'
 import { stateHex, STATE_COLORS, ACCENT } from '../lib/theme'
 import { matchStateColor } from '../lib/mapStyle'
+import { FleetPriorityPanel } from './FleetPriorityPanel'
 
 // OpenFreeMap public tiles — no API key. If they fail to load (offline), we
 // fall back to an inline SVG projection so the map still works with no network.
@@ -257,6 +258,9 @@ export const BridgeMap = memo(function BridgeMap() {
       ) : (
         <div ref={containerRef} className="map-canvas" />
       )}
+      {/* S1: the fleet-priority card overlays both map modes (MapLibre and the
+          offline SVG fallback) so the RUL decision surface is always on. */}
+      <FleetPriorityPanel />
       <div className="map-title">Fleet · 50 bridges</div>
     </div>
   )

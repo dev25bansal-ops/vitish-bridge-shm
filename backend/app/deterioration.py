@@ -158,6 +158,29 @@ def next_inspection(rating: str, current: int, threshold: int = 4,
     return None
 
 
+def years_to_poor(rating: str, current: int, threshold: int = 4,
+                  horizon: int = 30) -> dict:
+    """First year each projection series (p10 / expected / p90) crosses
+    ``threshold`` (NBI <= threshold, e.g. poor) within ``horizon`` years.
+
+    The p10/p90 series are the SAME fan the UI plots, so the band is consistent
+    with the curve: p10 is the low-NBI (bad-side) percentile and crosses first,
+    p90 the high-NBI (good-side) percentile and crosses last, expected in
+    between.  Honest reading: a *band of years under a prior*, never a
+    deterministic remaining life.  ``already_poor`` True means the current
+    condition is already at/below the threshold (0 years).  A ``None`` series
+    means it never crosses within the horizon under that percentile.
+    """
+    if current <= threshold:
+        return {"already_poor": True, "p10": 0, "expected": 0, "p90": 0,
+                "horizon": horizon}
+    rows = project(rating, current, years=horizon, threshold=threshold)
+    out = {"already_poor": False, "horizon": horizon}
+    for key in ("p10", "expected", "p90"):
+        out[key] = next((r["year"] for r in rows if r[key] <= threshold), None)
+    return out
+
+
 def bridge_deterioration(bridge_id: str, bhi: float, years: int = 30,
                          rating: str = "super") -> dict:
     """One self-describing deterioration payload for the API (used by D2-11)."""
@@ -178,6 +201,7 @@ def bridge_deterioration(bridge_id: str, bhi: float, years: int = 30,
         "projection": rows,
         "next_inspection_year": nxt,
         "next_inspection_rule": f"first year P(NBI <= {4}) >= {0.25:.0%}",
+        "years_to_poor": years_to_poor(rating, current, threshold=4, horizon=years),
         "note": ("Markov projection under an empirical LTBP fleet prior — a "
                  "probabilistic model, not a certified RUL and no Paris-law "
                  "forecast. condition_from_bhi is a model assumption, not an "

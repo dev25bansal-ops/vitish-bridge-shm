@@ -285,6 +285,56 @@ def create_app() -> FastAPI:
                 detail="LTBP Markov priors not available — run scripts/ltbp_analyze.py "
                        "to build data/ltbp/analysis/ltbp_summary.json")
 
+    @app.get("/api/fleet/priority")
+    def fleet_priority(limit: int = Query(12, ge=1, le=50),
+                       rating: str = Query("super", pattern="^(super|sub)$")) -> dict:
+        """S1 RUL decision surface — the whole fleet ranked by next-inspection
+        year (most urgent first), each bridge carrying its "years to NBI<=4"
+        band.  HONEST LABELS: the 49 regulator healths are seeded/illustrative
+        (never real inspection data); every number is a Markov projection under
+        an empirical LTBP fleet prior, small n — not a certified RUL.  The hero
+        bridge is live and marked as such."""
+        hero = _live_hero_state()
+        bridges = all_bridges(hero_bhi=hero["bhi"], hero_state=hero["state"])
+        rows = []
+        for b in bridges:
+            bhi = float(b["bhi"])
+            current = det_mod.condition_from_bhi(bhi)
+            nxt = det_mod.next_inspection(rating, current)
+            band = det_mod.years_to_poor(rating, current, threshold=4, horizon=30)
+            rows.append({
+                "id": b["id"],
+                "name": b["name"],
+                "state": b["state"],
+                "bhi": round(bhi, 1),
+                "current_condition": current,
+                "next_inspection_year": nxt,
+                "years_to_poor": band,
+                "live": bool(b.get("live", False)),
+                "hero": bool(b.get("hero", False)),
+            })
+        # Most urgent first: earliest next-inspection year, then the band's
+        # expected crossing, then BHI.  Never-within-horizon (None) sorts last.
+        rows.sort(key=lambda r: (
+            r["next_inspection_year"] if r["next_inspection_year"] is not None else 10 ** 9,
+            r["years_to_poor"]["expected"] if r["years_to_poor"]["expected"] is not None else 10 ** 9,
+            r["bhi"],
+        ))
+        for i, r in enumerate(rows, start=1):
+            r["rank"] = i
+        return {
+            "count": len(rows),
+            "limit": limit,
+            "sorted_by": "next_inspection_year asc (most urgent first); "
+                         "tie-break years_to_poor.expected",
+            "priors_label": det_mod.PRIORS_LABEL,
+            "note": ("Prior-driven prioritization view — the 49 regulator "
+                     "healths are seeded/illustrative, never real inspection "
+                     "data.  Markov projection under an empirical LTBP fleet "
+                     "prior, small n — a probabilistic band, not a certified RUL."),
+            "rows": rows[:limit],
+        }
+
     @app.get("/api/bridge/{bridge_id}/condition")
     def condition(bridge_id: str, run_seg: int = Query(0, ge=0, le=1)) -> dict:
         """Regulator condition card from the crack index (D1-3).
