@@ -25,6 +25,7 @@ CLI:  python app/simulator.py [--scenario healthy|rupture] [--loops N]
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
 import sys
@@ -45,7 +46,7 @@ import numpy as np
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app import contract  # noqa: E402
+from app import bridge_registry, contract  # noqa: E402
 from app.config import Settings, setup_logging, settings  # noqa: E402
 from app.events import EventBus, get_bus  # noqa: E402
 from app.mqtt_client import Publisher, emit  # noqa: E402
@@ -436,6 +437,16 @@ class Simulator:
         self.injector = DamageInjector(self.players["healthy"], self.players["rupture"],
                                        cfg, bus)
         self.injector.set_scenario(scenario)
+        # item 14 (bridge registry): every env-registered extra bridge gets its
+        # own independent — and openly synthetic — healthy stream.  The SAME
+        # synthetic channel model / measurement chain as the hero's fallback
+        # (see SyntheticPlayer), a different stable seed per bridge id, so two
+        # extras are distinguishable on the map and never identical to the hero.
+        # They follow the hero's cadence but NOT the hero's damage injector — an
+        # extra bridge you onboard stays an independent healthy stream.
+        self.extra_players: Dict[str, StreamPlayer] = {
+            bid: self._build_extra_player(bid) for bid in bridge_registry.extra_bridge_ids()
+        }
         self._control_token: Optional[int] = None
         if bus is not None:
             self._control_token = bus.subscribe("control/cmd", self._on_control)
@@ -483,6 +494,11 @@ class Simulator:
                                         healthy_rms=healthy_rms),
         }
 
+    def _build_extra_player(self, bid: str) -> StreamPlayer:
+        """Deterministic healthy synthetic channel for one extra bridge id."""
+        seed = int(hashlib.sha1(bid.encode("utf-8")).hexdigest()[:6], 16)
+        return SyntheticPlayer("healthy", self.cfg.nodes, seed=seed)
+
     def _on_control(self, topic: str, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
@@ -514,6 +530,8 @@ class Simulator:
                 # the phase accumulator still advance below.
                 log.exception("simulator tick %d failed (%s) — continuing", tick, exc)
             self.injector.tick()
+            for player in self.extra_players.values():
+                player.tick()
             tick += 1
             seg = tick // _CHUNKS_PER_SEG
             if self.loops and seg >= self.loops:
@@ -521,25 +539,38 @@ class Simulator:
                 break
             self._stop.wait(1.0 / self.rate)
 
+    def _emit_accel(self, bridge_id: str, node: int, win, flag: int,
+                    tick: int, ts: float) -> None:
+        """One contract-shaped accel message for one bridge/node."""
+        rms = float(np.sqrt(np.mean(win ** 2)))
+        topic = contract.TOPIC_ACCEL.format(bridge=bridge_id)
+        payload = {
+            "bridge": bridge_id,
+            "node": int(node),
+            "ts": round(ts, 3),
+            "fs": self.cfg.fs,
+            "samples": [round(float(x), 6) for x in win],
+            "rms": round(rms, 6),
+            "flag": flag,
+            "msg_id": f"sim-{bridge_id}-{tick}-{node}",
+        }
+        emit(topic, payload, self.publisher, bus=self.bus,
+             qos=contract.QOS_TELEMETRY)
+
     def _tick(self, tick: int) -> None:
         ts = contract.now()
+        # hero stream (semantics unchanged from item 1; msg_id gains the id prefix)
         for node in self.cfg.nodes:
             win = self.injector.current_window(node)
-            rms = float(np.sqrt(np.mean(win ** 2)))
-            flag = self.injector.rms_flag(rms)
-            topic = contract.TOPIC_ACCEL.format(bridge=self.cfg.bridge_id)
-            payload = {
-                "bridge": self.cfg.bridge_id,
-                "node": int(node),
-                "ts": round(ts, 3),
-                "fs": self.cfg.fs,
-                "samples": [round(float(x), 6) for x in win],
-                "rms": round(rms, 6),
-                "flag": flag,
-                "msg_id": f"sim-{tick}-{node}",
-            }
-            emit(topic, payload, self.publisher, bus=self.bus,
-                 qos=contract.QOS_TELEMETRY)
+            flag = self.injector.rms_flag(float(np.sqrt(np.mean(win ** 2))))
+            self._emit_accel(self.cfg.bridge_id, int(node), win, flag, tick, ts)
+        # item 14 (bridge registry): extra bridge streams — independent healthy
+        # synthetic channels (own seed, own measurement chain; no damage injector).
+        # flag is always 0 so an extra's heuristic fusion never drifts on its own.
+        for bid, player in self.extra_players.items():
+            for node in self.cfg.nodes:
+                win = player.current_window(node)
+                self._emit_accel(bid, int(node), win, 0, tick, ts)
 
         # node heartbeat every 10 s (no MQTT under --no-broker)
         if tick % 10 == 0 and self.publisher is not None:

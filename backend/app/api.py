@@ -46,6 +46,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
+from app import bridge_registry  # noqa: E402
 from app import deterioration as det_mod  # noqa: E402
 from app import edge_node as edge_mod  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
@@ -428,7 +429,11 @@ def create_app() -> FastAPI:
     @app.get("/api/bridge/{bridge_id}/history")
     def history(bridge_id: str, metric: str = "bhi",
                 limit: int = Query(120, ge=1, le=10000)) -> dict:
-        if bridge_id == settings.bridge_id:
+        if bridge_id == settings.bridge_id or bridge_registry.is_extra(bridge_id):
+            # live store for the hero AND for registry extras (item 14): extras
+            # are recorded under their own bridge id, so their history is the
+            # real fused/per-second rows, never _simulated_history (which would
+            # crash on a non-reg-NN id anyway).
             st = _store()
             if metric == "bhi":
                 data = st.recent_bhi(bridge_id, limit)
@@ -505,6 +510,15 @@ def create_app() -> FastAPI:
                 "amber": contract.BHI_AMBER,
                 "age_factor": contract.AGE_FACTOR,
                 "traffic_factor": contract.TRAFFIC_FACTOR,
+            },
+            # item 14 (bridge registry): the multi-bridge surface + the honest
+            # scope for onboarding.  Extras are env-registered SIMULATED bridges;
+            # the label answers "how fast can you onboard a bridge?" without
+            # overclaiming — config+registry is a same-run SOFTWARE exercise, a
+            # real (sensor) deployment is a days-scale task.
+            "multi_bridge": {
+                "extra_bridges": bridge_registry.extra_bridges(),
+                "onboard_label": bridge_registry.ONBOARD_LABEL,
             },
         }
 

@@ -27,6 +27,7 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import Settings, setup_logging, settings  # noqa: E402
+from app import bridge_registry  # noqa: E402
 from app import api as api_mod  # noqa: E402
 from app import db  # noqa: E402
 from app import events  # noqa: E402
@@ -127,6 +128,15 @@ def main(argv=None) -> int:
 
     recorder_token = db.attach_recorder(cfg, bus, store)
 
+    # --- item 14: env-registered extra bridges (bridge registry) ---------------
+    # Each extra is recorded under its OWN bridge id (same per-bridge routing as
+    # the edge nodes below), so /api/bridge/<extra>/history + /state serve real
+    # fused rows instead of a placeholder when extras are configured.
+    extra_recorder_tokens = [
+        db.attach_recorder(cfg, bus, store, pattern=f"bridge/{b}/#")
+        for b in bridge_registry.extra_bridge_ids()
+    ]
+
     # --- real edge nodes (edge slots: esp32-1 + esp01-1 by default) ------------
     # Always-on: cheap bus subscribers; show OFFLINE until a board streams.
     # Every edge slot gets a recorder so a stock-flashed ESP-01S (esp01-1) is
@@ -217,7 +227,7 @@ def main(argv=None) -> int:
     finally:
         _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher,
                   bus, recorder_token, live_feed, live_recorder_token,
-                  edge_recorder_token, edge, tg_disp)
+                  edge_recorder_token, extra_recorder_tokens, edge, tg_disp)
     return 0
 
 
@@ -278,7 +288,8 @@ def _run_api(cfg: Settings):
 
 def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
               recorder_token, live_feed=None, live_recorder_token=None,
-              edge_recorder_token=None, edge=None, tg=None) -> None:
+              edge_recorder_token=None, extra_recorder_tokens=None,
+              edge=None, tg=None) -> None:
     sim.stop()
     if driver is not None:
         driver.stop()
@@ -293,6 +304,10 @@ def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
     if edge_recorder_token:
         # edge_recorder_token is a list (one recorder per edge bridge id)
         for tok in edge_recorder_token:
+            bus.unsubscribe(tok)
+    if extra_recorder_tokens:
+        # item 14: one recorder subnet per env-registered extra bridge
+        for tok in extra_recorder_tokens:
             bus.unsubscribe(tok)
     if edge is not None:
         edge.stop()

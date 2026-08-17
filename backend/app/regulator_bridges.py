@@ -157,7 +157,21 @@ def all_bridges(hero_bhi: float | None = None,
     hero["color"] = _STATE_COLORS[hero["state"]]
     hero["live"] = True
     regs = [_regulator_dict(i, row) for i, row in enumerate(_REGULATORS, start=1)]
-    return [hero] + regs
+    # item 14 (bridge registry): env-registered extra bridges are appended AFTER
+    # the regulators, so the default (no env) inventory stays exactly 50 and
+    # every existing count assertion keeps its meaning.  An extra's fused BHI
+    # lives in the persistence store; this base dict carries the healthy
+    # baseline (87.0 GREEN, the same default the hero would hold) plus the
+    # honesty tags (synthetic/source_label/onboard_label) from the registry.
+    extras: List[dict] = []
+    from app import bridge_registry  # lazy import: registry deps on contract only
+    for eb in bridge_registry.extra_bridges():
+        b = dict(eb)
+        b["bhi"] = 87.0
+        b["state"] = "GREEN"
+        b["color"] = _STATE_COLORS["GREEN"]
+        extras.append(b)
+    return [hero] + regs + extras
 
 
 def find_bridge(bridge_id: str) -> dict | None:
@@ -182,6 +196,7 @@ def geojson(hero_bhi: float | None = None, hero_state: str | None = None) -> dic
                 "color": b["color"],
                 "hero": b["hero"],
                 "live": b.get("live", False),
+                "synthetic": b.get("synthetic", False),
             },
         })
     return {"type": "FeatureCollection", "features": features}
