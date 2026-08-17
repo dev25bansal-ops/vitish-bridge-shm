@@ -20,6 +20,7 @@ TESTS=(
   backend/tests/test_api_routes.py
   backend/tests/test_bugfix_regression.py
   backend/tests/test_condition.py
+  backend/tests/test_crack_width.py
   backend/tests/test_cv_feed.py
   backend/tests/test_demo_arc.py
   backend/tests/test_demo_driver.py
@@ -67,4 +68,4 @@ if [ "$FAILED" -ne 0 ]; then
   echo "!! one or more tests failed"
   exit 1
 fi
-echo "== ALL 24 TEST FILES PASS =="
+echo "== ALL 25 TEST FILES PASS =="

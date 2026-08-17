@@ -34,6 +34,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from models.cv.crack_width import aggregate_width  # item 18: px width evidence
+
 # --- documented mapping constants -----------------------------------------------
 B_REF = 0.5                    # crack-index saturation scale (B = 0.5 -> ci ~0.63)
 # ROADMAP line 67: 9.0 (not 8.0) so band 0 'Failed' is REACHABLE at ci==1.0 —
@@ -151,6 +153,14 @@ def condition_card(dets: list[dict] | None = None, cv_subindex: float | None = N
     nbi, nbi_label = nbi_condition(ci)
     conf = confidence(mode if source == "segmentation" else "live-cv-subindex",
                       idx["n_dets"], ci)
+    evidence = {"n_detections": idx["n_dets"],
+                "imaged_frac": round(idx["imaged_frac"], 3)}
+    if dets:
+        # item 18: pixel-scale, UNcalibrated crack width from the real masks.
+        # None when no detection has a measurable mask -> no width is claimed.
+        w_agg = aggregate_width(dets)
+        if w_agg is not None:
+            evidence["crack_width"] = w_agg
     card = {
         "source": source,
         "crack_index": idx["ci"],
@@ -162,8 +172,7 @@ def condition_card(dets: list[dict] | None = None, cv_subindex: float | None = N
             "risk_class": risk_class(ci),
         },
         "confidence": conf,
-        "evidence": {"n_detections": idx["n_dets"],
-                     "imaged_frac": round(idx["imaged_frac"], 3)},
+        "evidence": evidence,
         "detector_mode": mode if source == "segmentation" else "live-cv-subindex",
         "frame_note": frame_note,
         "note": ("Relative severity reading from the crack index — NEVER a "

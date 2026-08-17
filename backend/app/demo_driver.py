@@ -198,18 +198,25 @@ class DemoDriver:
         cmd = {"cmd": "cv", "value": res["cv"], "source": res["source"],
                "frame": res["frame"], "conf": res["conf"],
                "area_norm": res["area_norm"], "model": res["model"],
+               "crack_width_px": res.get("crack_width_px"),
                "ts": contract.now()}
         self.bus.publish("control/cmd", cmd, source="demo_driver")
-        log.info("beat %-24s cv evidence %s -> cv=%.3f (conf=%.3f, area=%.5f, frame=%s)%s",
+        wpx = res.get("crack_width_px")
+        wstr = (" uncalibrated width px median %.1f max %.1f" % (
+                    wpx["width_median_px"], wpx["width_max_px"])
+                if wpx else " width n/a")
+        log.info("beat %-24s cv evidence %s -> cv=%.3f (conf=%.3f, area=%.5f, frame=%s)%s%s",
                  beat["name"], res["source"], res["cv"], res["conf"],
                  res["area_norm"], res["frame"],
-                 " [FALLBACK]" if res.get("fallback") else "")
+                 " [FALLBACK]" if res.get("fallback") else "", wstr)
         alert = action.get("alert")
         if alert and not res.get("fallback"):
             # only publish the real-evidence alert; a fallback must not claim a
             # real detection (the generic fusion critical alert covers the arc).
             a = dict(alert)
-            a["text"] = a["text"].format(conf=res["conf"], area=res["area_norm"] * 100)
+            a["text"] = a["text"].format(conf=res["conf"], area=res["area_norm"] * 100,
+                                         width="" if not wpx else
+                                         " · segmented crack width ~%.0f px (uncalibrated)" % wpx["width_median_px"])
             emit(contract.TOPIC_ALERT.format(bridge=self.cfg.bridge_id),
                  _alert_payload(self.cfg, a, msg_id), self.publisher, bus=self.bus)
 

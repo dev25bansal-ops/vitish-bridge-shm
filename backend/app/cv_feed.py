@@ -113,10 +113,15 @@ def evidence(frame_name: str, fallback_cv: float = 0.30) -> Dict[str, Any]:
         conf = float(top["conf"])
         area_norm = float(top["area_px"]) / float(img.shape[0] * img.shape[1])
         cv = cv_from_detection(conf, area_norm)
+        # item 18: pixel-scale, UNcalibrated crack width of the TOP detection
+        # (mask geometry in px — NEVER mm; requires a calibration target).
+        from models.cv.crack_width import crack_pixel_width
+        w = crack_pixel_width(top["mask"])
         return {
             "cv": round(cv, 3),
             "conf": round(conf, 3),
             "area_norm": round(area_norm, 5),
+            "crack_width_px": w,
             "frame": frame_name,
             "model": "crack_seg.pt",
             "source": "cv_feed",
@@ -130,6 +135,7 @@ def evidence(frame_name: str, fallback_cv: float = 0.30) -> Dict[str, Any]:
             "cv": float(fallback_cv),
             "conf": 0.0,
             "area_norm": 0.0,
+            "crack_width_px": None,
             "frame": frame_name,
             "model": "scripted-fallback",
             "source": "cv_feed-fallback",
