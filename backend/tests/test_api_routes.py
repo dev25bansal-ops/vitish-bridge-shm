@@ -159,6 +159,37 @@ _check("live running enabled", b.get("enabled") is True and b.get("received") ==
        str(b)[:120])
 _check("live hero untouched label", b.get("hero_bridge_untouched") is True)
 
+# --- CORS origins (NOW item 4 / ENH-07): env-driven, safe local default ---------
+from app.api import cors_origins
+_check("cors default origins scoped to twin (not *)",
+       cors_origins() == ["http://localhost:5173", "http://127.0.0.1:5173"],
+       str(cors_origins()))
+import os as _os
+_cors_mw = [m for m in create_app().user_middleware
+            if getattr(m, "cls", None) is not None and "CORS" in m.cls.__name__]
+_check("cors middleware present", len(_cors_mw) == 1)
+if _cors_mw:
+    kw = dict(_cors_mw[0].kwargs)
+    _check("cors allow_origins scoped to twin",
+           kw.get("allow_origins") == ["http://localhost:5173",
+                                       "http://127.0.0.1:5173"],
+           str(kw.get("allow_origins")))
+    _check("cors credentials allowed for explicit origins",
+           kw.get("allow_credentials") is True)
+_os.environ["VITISH_CORS_ORIGINS"] = "http://localhost:3000,http://127.0.0.1:3000"
+_check("cors env override",
+       cors_origins() == ["http://localhost:3000", "http://127.0.0.1:3000"],
+       str(cors_origins()))
+_os.environ["VITISH_CORS_ORIGINS"] = "*"
+_check("cors wildcard override", cors_origins() == ["*"], str(cors_origins()))
+_mw2 = [m for m in create_app().user_middleware
+        if getattr(m, "cls", None) is not None and "CORS" in m.cls.__name__]
+if _mw2:
+    kw2 = dict(_mw2[0].kwargs)
+    _check("cors wildcard forces credentials off", kw2.get("allow_credentials") is False,
+           str(kw2.get("allow_credentials")))
+del _os.environ["VITISH_CORS_ORIGINS"]
+
 # --- cleanup: clear the fake singletons so later suite runs are clean -----------
 stiff_mod.set_tracker(None)
 sim_mod.set_simulator(None)

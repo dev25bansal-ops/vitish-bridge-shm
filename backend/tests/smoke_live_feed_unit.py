@@ -148,7 +148,7 @@ def test_recorder_pattern_isolation():
     check("live accel persisted to live store", len(live_store.rms) == 1)
     check("live accel NOT in hero store", len(hero_store.rms) == 0)
     if live_store.rms:
-        _, node, rms, _ = live_store.rms[0]
+        _, node, rms, _, _ = live_store.rms[0]  # (ts, node, rms, flag, bridge)
         check("live row node/rms", node == 1 and abs(rms - 0.0045) < 1e-9)
 
     # a hero z24 accel event must stay in the hero store (arc untouched)

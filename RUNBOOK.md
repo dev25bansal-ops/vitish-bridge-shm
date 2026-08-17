@@ -38,6 +38,12 @@ python -m app.run_all --demo --live
 `--speed 3.4` runs the 175 s demo ~3× faster; `--rate 3.4` runs the simulator
 faster (the ~51 s detector warm-up then completes in ~15 s).
 
+**Out-of-band alert dispatch (optional):** set `VITISH_TELEGRAM_TOKEN` and
+`VITISH_TELEGRAM_CHAT` to forward threshold-crossing alerts to a Telegram chat.
+In `--demo` mode the message footer honestly labels the ping as the simulated
+story arc (`backend/app/telegram_alerts.py`). Without both env vars the
+dispatcher is a silent no-op — it never affects the demo.
+
 ---
 
 ## 2. Network-off start order (venue WiFi is unreliable)

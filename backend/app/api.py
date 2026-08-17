@@ -16,12 +16,15 @@ CORS is open because the twin runs on a different port.  The app is state-light:
 it reads the shared store (auto-selected Postgres/memory) and publishes control
 commands on the shared event bus.
 
-Local-only-safe (ROADMAP line 92): ``allow_origins=["*"]`` with
-``allow_credentials=True`` is only safe on a same-machine demo — browsers
-REFUSE to send credentials on a wildcard-origin CORS response, so no
-credential-bearing cross-origin request can work here, and the API binds
-0.0.0.0 on the dev box.  A public deployment must pin exact origins and split
-credentials (and the 0.0.0.0 bind) — see ROADMAP line 121.
+CORS origins are environment-driven (COMPREHENSIVE-ANALYSIS NOW item 4, ENH-07):
+``VITISH_CORS_ORIGINS`` = comma-separated exact origins (e.g. the twin's Vite
+dev server).  Default when unset: ``http://localhost:5173`` +
+``http://127.0.0.1:5173`` — the demo twin's own origin, NOT ``*``.  Set
+``VITISH_CORS_ORIGINS=*`` explicitly to reproduce the old wide-open behaviour
+(development only; ``allow_credentials`` is then forced off, because browsers
+REFUSE to send credentials on a wildcard-origin CORS response anyway).  The API
+still binds 0.0.0.0 on the dev box — a public deployment must pin exact origins
+and split credentials (ROADMAP line 121, ROADMAP-NEXT §2 SEC-02).
 """
 from __future__ import annotations
 
@@ -62,6 +65,22 @@ _DEFAULT_HERO = {"bhi": 87.0, "u": 3.0, "cv": 0.10, "vib": 0.12, "load": 0.19,
                  "state": "GREEN"}
 _UPTIME0 = time.time()
 
+# CORS origins (NOW item 4 / ENH-07): env-driven, safe local default.
+_DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
+
+
+def cors_origins() -> list[str]:
+    """Exact CORS origins for the API.
+
+    ``VITISH_CORS_ORIGINS`` (comma-separated) overrides the demo-local default
+    (the twin's Vite dev server on 5173).  A literal ``*`` reproduces the old
+    wide-open behaviour for development only.
+    """
+    raw = os.environ.get("VITISH_CORS_ORIGINS", "").strip()
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return list(_DEFAULT_CORS_ORIGINS)
+
 # actual bound ports (run_all.py may fall back to a free port when 8000/8765
 # are busy); reported via /api/config so the twin never hardcodes them.
 _api_port: Optional[int] = None
@@ -85,10 +104,14 @@ def create_app() -> FastAPI:
         description="PS#99 bridge structural-health pipeline (simulator / MQTT / fusion / API)",
         version=__version__,
     )
+    _origins = cors_origins()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=_origins,
+        # Explicit origins enable credentialed requests; with the wide-open
+        # ``*`` override, credentials are forced off (browsers would refuse to
+        # send them on a wildcard response anyway).
+        allow_credentials=_origins != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -191,12 +214,14 @@ def create_app() -> FastAPI:
                 "hero": True,
                 "live": True,
             }
-        if bridge_id == edge_mod.EDGE_BRIDGE:
-            st = edge_mod.get_edge_status()
+        if bridge_id in edge_mod.EDGE_BRIDGES:
+            st = edge_mod.get_edge_status(bridge=bridge_id)
             if st is None:
                 raise HTTPException(status_code=404,
                                     detail="edge node monitor not running")
-            return {"id": bridge_id, "name": "ESP32 edge node",
+            return {"id": bridge_id,
+                    "name": "ESP-01S edge node" if bridge_id == "esp01-1"
+                    else "ESP32 edge node",
                     "hero": False, "live": True, **st}
         b = find_bridge(bridge_id)
         if b is None:
@@ -313,11 +338,11 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=400, detail="metric must be bhi|rms")
             return {"bridge": bridge_id, "metric": metric, "limit": limit, "data": data}
 
-        if bridge_id == edge_mod.EDGE_BRIDGE:
+        if bridge_id in edge_mod.EDGE_BRIDGES:
             if metric != "rms":
                 raise HTTPException(status_code=400,
                                     detail="edge node exposes only rms history")
-            st = edge_mod.get_edge_status()
+            st = edge_mod.get_edge_status(bridge=bridge_id)
             rows = (st or {}).get("recent_rms", [])
             return {"bridge": bridge_id, "metric": metric, "limit": limit,
                     "data": rows[-limit:]}
@@ -368,6 +393,19 @@ def create_app() -> FastAPI:
             "ws_port": ws_port,
             "broker": {"host": settings.broker_host, "port": settings.broker_port},
             "demo_speed": settings.demo_speed,
+            # BHI contract (ENH-10): the single served source of truth for the
+            # fusion constants the twin's computeBhi mirrors.  A consumer that
+            # wants to render BHI without importing backend code reads this block
+            # and derives computeBhi from it (weights, band thresholds, factors).
+            "bhi": {
+                "formula": "bhi = 100 * (1 - w_cv*cv - w_vib*vib - w_load*load)"
+                           " * age_factor * traffic_factor",
+                "weights": dict(contract.BHI_W),
+                "green": contract.BHI_GREEN,
+                "amber": contract.BHI_AMBER,
+                "age_factor": contract.AGE_FACTOR,
+                "traffic_factor": contract.TRAFFIC_FACTOR,
+            },
         }
 
     return app

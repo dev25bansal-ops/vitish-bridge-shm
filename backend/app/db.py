@@ -318,9 +318,13 @@ class MemoryStore(Store):
                  max_series: int = _MAX_SERIES, max_alerts: int = _MAX_ALERTS) -> None:
         self.bridge = bridge
         self.cache_path = Path(cache_path) if cache_path else None
-        self.rms: Deque[tuple] = deque(maxlen=max_series)      # (ts, node, rms, flag)
-        self.bhi: Deque[tuple] = deque(maxlen=max_series)      # (ts, bhi,u,cv,vib,load,state)
-        self.alerts: Deque[tuple] = deque(maxlen=max_alerts)   # (ts,sev,src,text,rec)
+        # Every deque row is tagged with its bridge id as the LAST field so reads
+        # can be scoped (ENH-01 / BUG-01): recent_rms('z24') must never return a
+        # live-demo or edge row.  The public row dict shape is unchanged — the
+        # tag is internal only.
+        self.rms: Deque[tuple] = deque(maxlen=max_series)      # (ts, node, rms, flag, bridge)
+        self.bhi: Deque[tuple] = deque(maxlen=max_series)      # (ts, bhi,u,cv,vib,load,state, bridge)
+        self.alerts: Deque[tuple] = deque(maxlen=max_alerts)   # (ts,sev,src,text,rec, bridge)
         self._lock = threading.RLock()
         self._load_cache()
         self._cache_fh = None
@@ -349,14 +353,19 @@ class MemoryStore(Store):
 
     def _apply_record(self, rec: dict) -> None:
         kind, data = rec.get("kind"), rec.get("data") or {}
+        # bridge is the LAST tuple field; records written before the bridge-tag
+        # (ENH-01) carry no key and are attributed to this store's own bridge.
+        bridge = data.get("bridge") or self.bridge
         if kind == "accel":
-            self.rms.append((data.get("ts"), data.get("node"), data.get("rms"), data.get("flag")))
+            self.rms.append((data.get("ts"), data.get("node"), data.get("rms"),
+                             data.get("flag"), bridge))
         elif kind == "bhi":
             self.bhi.append((data.get("ts"), data.get("bhi"), data.get("u"),
-                             data.get("cv"), data.get("vib"), data.get("load"), data.get("state")))
+                             data.get("cv"), data.get("vib"), data.get("load"),
+                             data.get("state"), bridge))
         elif kind == "alert":
             self.alerts.append((data.get("ts"), data.get("severity"), data.get("source"),
-                                data.get("text"), data.get("recommendation")))
+                                data.get("text"), data.get("recommendation"), bridge))
 
     def _log(self, kind: str, data: dict) -> None:
         if self._cache_fh is None:
@@ -383,49 +392,57 @@ class MemoryStore(Store):
     # -- interface --------------------------------------------------------------
     def insert_accel(self, node, ts, rms, flag, bridge=None) -> None:
         with self._lock:
-            self.rms.append((float(ts), int(node), float(rms), int(flag)))
-            self._log("accel", {"ts": ts, "node": node, "rms": rms, "flag": flag})
+            bridge = bridge or self.bridge
+            self.rms.append((float(ts), int(node), float(rms), int(flag), bridge))
+            self._log("accel", {"ts": ts, "node": node, "rms": rms, "flag": flag,
+                                "bridge": bridge})
 
     def insert_bhi(self, ts, bhi, u, cv, vib, load, state, bridge=None) -> None:
         with self._lock:
+            bridge = bridge or self.bridge
             self.bhi.append((float(ts), float(bhi), float(u), float(cv),
-                             float(vib), float(load), str(state)))
+                             float(vib), float(load), str(state), bridge))
             self._log("bhi", {"ts": ts, "bhi": bhi, "u": u, "cv": cv,
-                              "vib": vib, "load": load, "state": state})
+                              "vib": vib, "load": load, "state": state,
+                              "bridge": bridge})
 
     def insert_alert(self, ts, severity, source, text, recommendation, bridge=None) -> None:
         with self._lock:
+            bridge = bridge or self.bridge
             self.alerts.append((float(ts), str(severity), str(source),
-                                str(text), str(recommendation)))
+                                str(text), str(recommendation), bridge))
             self._log("alert", {"ts": ts, "severity": severity, "source": source,
-                                "text": text, "recommendation": recommendation})
+                                "text": text, "recommendation": recommendation,
+                                "bridge": bridge})
 
     def recent_rms(self, bridge, limit=120) -> List[dict]:
         with self._lock:
-            rows = list(self.rms)[-max(limit, 1):]
+            rows = [r for r in self.rms if r[-1] == bridge][-max(limit, 1):]
         return [{"ts": r[0], "node": r[1], "rms": r[2], "flag": r[3]} for r in rows]
 
     def recent_bhi(self, bridge, limit=120) -> List[dict]:
         with self._lock:
-            rows = list(self.bhi)[-max(limit, 1):]
+            rows = [r for r in self.bhi if r[-1] == bridge][-max(limit, 1):]
         return [{"ts": r[0], "bhi": r[1], "u": r[2], "cv": r[3], "vib": r[4],
                  "load": r[5], "state": r[6]} for r in rows]
 
     def recent_alerts(self, bridge, limit=50) -> List[dict]:
         with self._lock:
-            rows = list(self.alerts)[-max(limit, 1):]
+            rows = [r for r in self.alerts if r[-1] == bridge][-max(limit, 1):]
         return [{"ts": r[0], "severity": r[1], "source": r[2], "text": r[3],
                  "recommendation": r[4]} for r in rows]
 
     def current_state(self, bridge) -> dict:
         with self._lock:
-            b = list(self.bhi)
+            b = [r for r in self.bhi if r[-1] == bridge]
             last = b[-1] if b else None
             nodes: Dict[str, dict] = {}
-            for ts, node, rms, flag in self.rms:
+            for ts, node, rms, flag, _br in self.rms:
+                if _br != bridge:
+                    continue
                 nodes[str(node)] = {"rms": rms, "flag": flag}
         if last:
-            ts, bhi, u, cv, vib, load, state = last
+            ts, bhi, u, cv, vib, load, state, _br = last
         else:
             ts, bhi, u, cv, vib, load, state = contract.now(), None, None, None, None, None, None
         return {

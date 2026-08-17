@@ -174,7 +174,7 @@ left rotting — each line says where it stands.
 - Memory/test-count drift — 'smoke 83/83 + 19/19' / '85 + 239 = 324' stale → **[x] FIXED 2026-08-15** — measured suite = **521 backend checks across the 15 gates + 58 twin vitest** (gate 9 = 32, gate 10 = 29 counted directly).
 - `features.py` — `np.trapezoid` numpy>=2.0-only → **[x] FIXED 2026-08-15** (numpy>=2.0 pinned in requirements.txt).
 - `stiffness.py` — `fem_modes` double eigendecomposition; `midspan_deflection` hardcodes 350 kN → **[x] FIXED** (rework removed both; no `eig(`/`midspan`/`350` remain).
-- CORS `allow_origins=['*']` + `allow_credentials=True` (api.py) → **[—] KEPT (local-only)** — documented; locked-down CORS + auth are ROADMAP line 121.
+- CORS `allow_origins=['*']` + `allow_credentials=True` (api.py) → **[x] FIXED 2026-08-16 (NOW item 4 / ENH-07)** — `VITISH_CORS_ORIGINS` env-driven; default is now the twin's own origin (`localhost:5173` + `127.0.0.1:5173`), not `*`; `VITISH_CORS_ORIGINS=*` explicitly restores the old dev behaviour with credentials forced off. Auth + 0.0.0.0 bind split remain ROADMAP line 121 / ROADMAP-NEXT §2 SEC-02.
 - The `u` fraction-vs-points mismatch + shared anomaly `_baseline` across nodes → **[x] FIXED (now-phase)** — shared `_baseline` documented as intentional in anomaly.py:49-51; `u` semantics resolved in Phase 1.
 
 **Untested paths to keep on the radar (not blocking the demo):**
