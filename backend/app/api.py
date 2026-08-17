@@ -47,6 +47,7 @@ from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
 from app import bridge_registry  # noqa: E402
+from app import channel_models as cm  # noqa: E402
 from app import deterioration as det_mod  # noqa: E402
 from app import edge_node as edge_mod  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
@@ -144,6 +145,21 @@ def create_app() -> FastAPI:
         merged["ts"] = st.get("ts")
         merged["nodes"] = st.get("nodes", {})
         merged["source"] = st.get("source")
+        # item 15 honesty-label gate: every hero surface carries an explicit
+        # telemetry-provenance block mirroring the manifest's canonical label
+        # (channel_models.get_data_source_label).  "live" here means the STREAM
+        # is live — the signal itself is a replay/synthetic model, never a live
+        # field sensor; the label says exactly that so the flag cannot be read
+        # as a real-sensor claim.
+        _dt = cm.get_data_source()
+        merged["telemetry"] = {
+            "source": _dt,
+            "label": cm.get_data_source_label(_dt),
+            "live_stream": True,
+            "note": ("live streaming pipeline (simulator -> fusion) — the "
+                     f"signal is {cm.get_data_source_label(_dt)}, never a live "
+                     "field sensor"),
+        }
         return merged
 
     # -- endpoints ----------------------------------------------------------------
@@ -196,10 +212,21 @@ def create_app() -> FastAPI:
     @app.get("/api/bridges")
     def bridges() -> dict:
         hero = _live_hero_state()
+        extra_ids = bridge_registry.extra_bridge_ids()
         return {
             "count": len(all_bridges()),
             "hero": all_bridges(hero_bhi=hero["bhi"], hero_state=hero["state"])[0],
             "bridges": all_bridges(hero_bhi=hero["bhi"], hero_state=hero["state"]),
+            # item 15 honesty-label gate: every bridge class is labeled on the
+            # inventory surface, so a consumer can never mistake a seeded
+            # regulator or a synthetic extra for real telemetry.
+            "labels": {
+                "hero": ("live streaming pipeline — signal is real Z24 replay "
+                         "or synthetic, never a live field sensor"),
+                "regulators": ("seeded/illustrative health — deterministic demo "
+                               "data, never real inspection data"),
+                "extras": bridge_registry.SOURCE_LABEL if extra_ids else None,
+            },
         }
 
     @app.get("/api/bridges/geojson")
@@ -224,18 +251,52 @@ def create_app() -> FastAPI:
             if st is None:
                 raise HTTPException(status_code=404,
                                     detail="edge node monitor not running")
+            # item 15 LIVE-badge gating: the edge bridge is "live" ONLY when a
+            # real measured packet has been received and is fresh (online).  An
+            # unwitnessed slot — firmware committed, no board flashed/bench
+            # tested — must NOT carry live: True.  The accel content is always
+            # the honest self-test BIST signal (see st['honesty']), so even an
+            # online node never claims real bridge vibration.
+            _online = bool(st.get("online") and st.get("received"))
             return {"id": bridge_id,
                     "name": "ESP-01S edge node" if bridge_id == "esp01-1"
                     else "ESP32 edge node",
-                    "hero": False, "live": True, **st}
+                    "hero": False,
+                    "live": _online,
+                    "live_label": (
+                        "real edge node ONLINE — measured packets streaming "
+                        "(accel is a labeled self-test BIST tone, no "
+                        "accelerometer attached)"
+                        if _online else
+                        "real edge node OFF-LINE — no measured packet yet; "
+                        "firmware committed, board not flashed/bench-tested"),
+                    **st}
         b = find_bridge(bridge_id)
         if b is None:
             raise HTTPException(status_code=404, detail="bridge not found")
+        if bridge_registry.is_extra(bridge_id):
+            # item 14/15: an extra's state is its registry record — already
+            # honest (synthetic: True, source_label, onboard_label) and served
+            # as-is so its simulated nature can never be lost in a flattened
+            # copy.  The live fused rows live under /history (same bridge id).
+            extra_state = {k: b.get(k) for k in (
+                "id", "name", "city", "state", "lat", "lon", "year_built",
+                "length_m", "kind", "bhi", "state", "color", "hero", "live",
+                "synthetic", "source_label", "onboard_label")}
+            extra_state["cv"] = 0.10
+            extra_state["vib"] = 0.12
+            extra_state["load"] = 0.19
+            extra_state["u"] = 3.0
+            extra_state["location"] = f"{b['city']}, {b['state']}"
+            return extra_state
         return {"id": b["id"], "name": b["name"],
                 "location": f"{b['city']}, {b['state']}",
                 "bhi": b["bhi"], "state": b["state"],
                 "cv": 0.15, "vib": 0.15, "load": 0.20, "u": 3.0,
-                "hero": False, "live": False}
+                "hero": False, "live": False,
+                "illustrative": True,
+                "note": ("seeded/illustrative health — deterministic demo data, "
+                         "never real inspection data")}
 
     @app.get("/api/bridge/{bridge_id}/stiffness")
     def stiffness(bridge_id: str) -> dict:

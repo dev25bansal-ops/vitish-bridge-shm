@@ -166,6 +166,23 @@ def get_data_source() -> str:
     return _data_source
 
 
+# Canonical human label per data source — the ONE place the honest wording lives.
+# The manifest and the hero state /api/bridge/{id}/state telemetry block both
+# read it, so no surface can drift to a different (looser) wording.
+_DATA_SOURCE_LABELS = {
+    "z24-replay": "real Z24 benchmark replay",
+    "synthetic": "procedural synthetic (dev fallback — no real data)",
+    "live-demo": "third-party public-broker MQTT feed (demo only)",
+}
+
+
+def get_data_source_label(source: Optional[str] = None) -> str:
+    """Honest human label for the runtime data source.  Unknown/absent source
+    falls back to the synthetic wording (the safe default claim)."""
+    s = source or get_data_source()
+    return _DATA_SOURCE_LABELS.get(s, _DATA_SOURCE_LABELS["synthetic"])
+
+
 # --- manifest -------------------------------------------------------------------
 def channel_entry(cfg: Settings, node: int, data_source: str) -> dict:
     """One channel's honest entry: real measured, or a modeled synthetic."""
@@ -217,11 +234,7 @@ def build_manifest(cfg: Settings, data_source: Optional[str] = None,
         "bridge": cfg.bridge_id,
         "generated_at": contract.now(),
         "data_source": data_source,
-        "data_source_label": {
-            "z24-replay": "real Z24 benchmark replay",
-            "synthetic": "procedural synthetic (dev fallback — no real data)",
-            "live-demo": "third-party public-broker MQTT feed (demo only)",
-        }[data_source],
+        "data_source_label": get_data_source_label(data_source),
         "channels": channels,
         "synthetic_model": synthetic_spec(cfg.nodes[0], int(cfg.fs)),
         "honesty": {

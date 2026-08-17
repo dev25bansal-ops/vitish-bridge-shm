@@ -201,7 +201,16 @@ def test_api_surface() -> None:
         check("state endpoint 200", r.status_code == 200)
         js = r.json()
         check("state id", js["id"] == edge_mod.EDGE_BRIDGE)
-        check("state live", js["live"] is True)
+        # item 15 LIVE-badge gating: before ANY packet is measured, the edge
+        # bridge must NOT claim live: True (firmware committed, board not
+        # flashed/bench-tested), and the off-line state must say why.
+        check("state NOT live before any measured packet",
+              js["live"] is False, f"live={js['live']!r}")
+        check("state off-line labeled honestly",
+              "not flashed" in js.get("live_label", "") or
+              "OFF-LINE" in js.get("live_label", "") or
+              "no measured packet" in js.get("live_label", ""),
+              f"live_label={js.get('live_label')!r}")
         check("state hardware label", js["hardware"].startswith("ESP-01S") or
               js["hardware"].startswith("ESP32"))
 
@@ -209,6 +218,14 @@ def test_api_surface() -> None:
                     _accel(edge_mod.EDGE_BRIDGE, "vitish-edge-esp32-0.1"),
                     source="test")
         time.sleep(0.05)
+        r = client.get(f"/api/bridge/{edge_mod.EDGE_BRIDGE}/state")
+        js = r.json()
+        check("state live after a real packet measured",
+              js["live"] is True, f"live={js['live']!r}")
+        check("state online after packet", js["online"] is True)
+        check("state still honest on accel content",
+              js.get("signal_kind") == "self-test-bist" and
+              "no accelerometer" in js.get("honesty", {}).get("accel_is", ""))
         r = client.get(f"/api/bridge/{edge_mod.EDGE_BRIDGE}/history?metric=rms")
         check("history rms 200", r.status_code == 200)
         check("history rms data", len(r.json()["data"]) == 1)

@@ -36,6 +36,7 @@ TESTS=(
   backend/tests/test_deconfounding.py
   backend/tests/test_pg_failover.py
   backend/tests/test_multi_bridge.py
+  backend/tests/test_honesty_gate.py
   backend/scripts/e2e_stack_smoke.py
   scripts/verify_demo_arc.py
 )
@@ -65,4 +66,4 @@ if [ "$FAILED" -ne 0 ]; then
   echo "!! one or more tests failed"
   exit 1
 fi
-echo "== ALL 23 TEST FILES PASS =="
+echo "== ALL 24 TEST FILES PASS =="

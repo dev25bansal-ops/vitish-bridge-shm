@@ -45,7 +45,13 @@ created: 2026-08-15
 - Live feed = **demo of live ingestion** (public broker, unvetted, `live-demo`,
   never fused into z24 BHI).
 - **No LIVE badge** — ESP32 is the H8-gated stretch ([[Key-Decisions]] #11);
-  firmware + backend monitor exist, no board flashed/bench-tested.
+  firmware + backend monitor exist, no board flashed/bench-tested. The edge
+  `/api/bridge/<slot>/state` `live` flag is regression-gated on a real measured
+  packet (item 15): an unwitnessed slot returns `live=false` + an "OFF-LINE —
+  firmware committed, board not flashed/bench-tested" label, and even an online
+  node labels its accel as the self-test BIST tone. Hero `live=true` means the
+  STREAM is live — its `telemetry` block says "real Z24 benchmark replay" or
+  "procedural synthetic", never a live field sensor. Say exactly that.
 - dacl10k (CC BY-NC) + SDNET2018 (registration) are dev-only research data.
 
 ## Dry-run drill
