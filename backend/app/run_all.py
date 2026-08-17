@@ -38,6 +38,7 @@ from app import stiffness as stiffness_mod  # noqa: E402
 from app import mqtt_client  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
 from app import edge_node as edge_mod  # noqa: E402
+from app import telegram_alerts as tg_mod  # noqa: E402
 
 log = logging.getLogger("run_all")
 
@@ -73,8 +74,13 @@ def _banner(cfg: Settings, store, sim: sim_mod.Simulator, demo: bool,
     edge_st = edge_mod.get_edge_status()
     if edge_st is not None:
         et = "ONLINE" if edge_st["online"] else "waiting for node"
-        print(f" Edge node       : bridge={edge_mod.EDGE_BRIDGE} {et} "
-              f"({edge_st['received']} rx)  [real {edge_st['hardware']}]")
+        edge_ids = ",".join(edge_mod.EDGE_BRIDGES)
+        print(f" Edge node       : bridge={edge_ids} primary={edge_mod.EDGE_BRIDGE} "
+              f"{et} ({edge_st['received']} rx)  [real {edge_st['hardware']}]")
+    tg_st = tg_mod.get_status()
+    if tg_st is not None and tg_st["enabled"]:
+        print(f" Telegram alerts : ENABLED (chat {tg_st['chat']}, "
+              f"min={tg_st['min_severity']}, {tg_st['throttle_s']:.0f}s throttle)")
     print(f" Demo driver     : {'ENABLED (speed %.2fx)' % settings.demo_speed if demo else 'disabled'}")
     print(line, flush=True)
 
@@ -121,14 +127,33 @@ def main(argv=None) -> int:
 
     recorder_token = db.attach_recorder(cfg, bus, store)
 
-    # --- real ESP32 edge node (bridge='esp32-1') -------------------------------
-    # Always-on: cheap bus subscriber; shows OFFLINE until the board streams.
+    # --- real edge nodes (edge slots: esp32-1 + esp01-1 by default) ------------
+    # Always-on: cheap bus subscribers; show OFFLINE until a board streams.
+    # Every edge slot gets a recorder so a stock-flashed ESP-01S (esp01-1) is
+    # NOT silently ignored (S8 fix) — rows are tagged with the topic's bridge id.
     edge = edge_mod.EdgeNodeMonitor(bus)
     edge_mod.set_edge_monitor(edge)
     edge.start()
-    edge_recorder_token = db.attach_recorder(cfg, bus, store,
-                                             pattern=f"bridge/{edge_mod.EDGE_BRIDGE}/#")
-    log.info("edge node monitor ENABLED — bridge='%s' (real ESP32)", edge_mod.EDGE_BRIDGE)
+    edge_recorder_tokens = [
+        db.attach_recorder(cfg, bus, store, pattern=f"bridge/{b}/#")
+        for b in edge_mod.EDGE_BRIDGES
+    ]
+    log.info("edge node monitor ENABLED — bridges=%s (real hardware)",
+             ",".join(edge_mod.EDGE_BRIDGES))
+
+    # --- out-of-band alert dispatch (Telegram, NEW-01) --------------------------
+    # Optional + fail-open: enabled only when VITISH_TELEGRAM_TOKEN and
+    # VITISH_TELEGRAM_CHAT are set.  In --demo the footer honestly labels the
+    # ping as the simulated story arc, never real bridge telemetry.
+    tg_disp = None
+    if tg_mod.TelegramAlertDispatcher(bus).enabled:
+        footer = ("— VITISH SHM · SIMULATED PS#99 demo pipeline — this is the "
+                  "storyboard arc, not real bridge telemetry" if args.demo
+                  else "— VITISH SHM alert dispatcher")
+        tg_disp = tg_mod.TelegramAlertDispatcher(
+            bus, footer=footer)
+        tg_mod.set_dispatcher(tg_disp)
+        tg_disp.start()
 
     if live:
         live_feed = live_mod.LiveFeed(bus)
@@ -192,7 +217,7 @@ def main(argv=None) -> int:
     finally:
         _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher,
                   bus, recorder_token, live_feed, live_recorder_token,
-                  edge_recorder_token, edge)
+                  edge_recorder_token, edge, tg_disp)
     return 0
 
 
@@ -253,7 +278,7 @@ def _run_api(cfg: Settings):
 
 def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
               recorder_token, live_feed=None, live_recorder_token=None,
-              edge_recorder_token=None, edge=None) -> None:
+              edge_recorder_token=None, edge=None, tg=None) -> None:
     sim.stop()
     if driver is not None:
         driver.stop()
@@ -265,10 +290,15 @@ def _shutdown(sim, driver, api_server, ws, fusion, subscriber, publisher, bus,
     bus.unsubscribe(recorder_token)
     if live_recorder_token is not None:
         bus.unsubscribe(live_recorder_token)
-    if edge_recorder_token is not None:
-        bus.unsubscribe(edge_recorder_token)
+    if edge_recorder_token:
+        # edge_recorder_token is a list (one recorder per edge bridge id)
+        for tok in edge_recorder_token:
+            bus.unsubscribe(tok)
     if edge is not None:
         edge.stop()
+    if tg is not None:
+        tg_mod.set_dispatcher(None)
+        tg.stop()
     if live_feed is not None:
         live_feed.stop()
     subscriber.stop()
