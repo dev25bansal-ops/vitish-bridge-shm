@@ -13,3 +13,4 @@ websockets>=12
 pydantic>=2.6
 psycopg2-binary>=2.9
 python-dotenv>=1.0
+reportlab>=4.0        # NEW-04 (item 10): IRC-118 / IBMS condition-report PDF generator

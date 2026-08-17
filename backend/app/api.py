@@ -42,6 +42,7 @@ if str(Path(__file__).resolve().parents[1]) not in sys.path:
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app import __version__, contract  # noqa: E402
@@ -342,6 +343,47 @@ def create_app() -> FastAPI:
                      "prior, small n — a probabilistic band, not a certified RUL."),
             "rows": rows[:limit],
         }
+
+    @app.get("/api/bridge/{bridge_id}/report.pdf")
+    def condition_report_pdf(bridge_id: str):
+        """NEW-04 (item 10) — per-bridge regulator-facing condition report as a
+        PDF (reportlab platypus).  DRAFT in IRC-118 format, explicitly not
+        certified; assembles the live state, D1-3 condition card, Markov
+        deterioration (D1-4/D2-11), recent alerts, and NEW-02 site temperature
+        with every honesty label verbatim.  Edge nodes keep no deterioration
+        model -> 404, consistent with /deterioration."""
+        from app import condition_report as cr
+        if bridge_id == settings.bridge_id:
+            bridge = {"id": bridge_id, "name": HERO["name"],
+                      "city": HERO["city"], "state": HERO["state"],
+                      "country": HERO["country"], "kind": HERO["kind"],
+                      "year_built": HERO["year_built"], "length_m": HERO["length_m"],
+                      "hero": True}
+            live_state = _live_hero_state()
+            alerts = _store().recent_alerts(bridge_id, 50)
+        else:
+            b = find_bridge(bridge_id)
+            if b is None:
+                raise HTTPException(status_code=404, detail="bridge not found")
+            bridge, live_state, alerts = b, None, None
+        report = cr.compose_report(bridge, live_state=live_state, alerts=alerts)
+        pdf = cr.pdf_bytes(report)
+        return Response(content=pdf, media_type="application/pdf", headers={
+            "Content-Disposition":
+                f'attachment; filename="{bridge_id}-condition-report.pdf"'})
+
+    @app.get("/api/fleet/report.csv")
+    def fleet_report_csv() -> Response:
+        """NEW-04 (item 10) — IBMS-inventory CSV for the whole fleet (hero + 49
+        regulators), one row per bridge with NBI rating, next-inspection year,
+        years-to-poor band, and the IRC-118 draft disclaimer on every row."""
+        from app import condition_report as cr
+        hero = _live_hero_state()
+        bridges = all_bridges(hero_bhi=hero["bhi"], hero_state=hero["state"])
+        csv_text = cr.to_csv(cr.inventory_rows(bridges))
+        return Response(content=csv_text.encode("utf-8"), media_type="text/csv",
+                        headers={"Content-Disposition":
+                                 'attachment; filename="vitish-ibms-inventory.csv"'})
 
     @app.get("/api/bridge/{bridge_id}/condition")
     def condition(bridge_id: str, run_seg: int = Query(0, ge=0, le=1)) -> dict:

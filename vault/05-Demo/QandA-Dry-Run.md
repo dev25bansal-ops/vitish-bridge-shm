@@ -20,6 +20,7 @@ created: 2026-08-15
 | **EU mandate** | No EU/UK/Netherlands smart-sensor mandate is verified — do not claim one. |
 | **690 citations / mAP 0.65** | Both were corrected away. Z24 environmental paper has **>1,000 citations**; no mAP 0.65 claim exists in the repo. |
 | **RUL / "years to NBI≤4"** | Never quote "N years of life left" or read the fleet ranking as real inspection data. Say: **Markov projection under an empirical LTBP fleet prior (small n, 44 FHWA pilot bridges) — a probabilistic band, not certified remaining life**; the 49 regulators are seeded/illustrative, so the ranking is a "prior-driven prioritization view" (1 live + 49 illustrative). The HealthPanel band + fleet-priority card carry this label verbatim ([[S1]]) — stay consistent with it on stage. |
+| **IRC-118 report certified?** | The generated condition report (PDF + inventory CSV) is an explicitly **not-certified DRAFT in IRC-118 format** — "fields to be confirmed against the final MoRTH IBMS schema." Never present it as a regulatory filing or a certified condition rating; the disclaimer is on the PDF cover and on every CSV row. It demonstrates regulator-ready packaging for the 30 Sep IBMS deadline, not a real submission. |
 
 ## The three numbers to state deliberately (memorized)
 

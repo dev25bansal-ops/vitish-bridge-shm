@@ -116,3 +116,6 @@ Thumbs.db
 !models/weights/lstm_ae_meta.json
 !data/z24/fixture/
 !data/z24/fixture/*.npy
+
+# Re-generated demo artifacts (condition-report samples) — not committed
+/docs/samples/
