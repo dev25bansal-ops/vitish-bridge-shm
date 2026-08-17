@@ -127,7 +127,7 @@ def _spectral_heuristic(window: np.ndarray, fs: int = 100) -> Tuple[float, float
     return score, uncertainty
 
 
-def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
+def get_anomaly(window, fs: int = 100, temperature: float | None = None) -> Tuple[float, float]:
     """Return (score, uncertainty) for one 1024-sample window.
 
     THE DEMO-CRITICAL ENTRY POINT.  The deterministic spectral heuristic
@@ -143,7 +143,19 @@ def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
     stays ~0 and this floor carries the demo arc.  The degenerate-scaler guard
     (ROADMAP line 40) remains: a future degenerate scaler is honestly declared
     INERT and contributes no push.
+
+    ``temperature`` (°C, optional) is the ambient temperature fed to the
+    trained ensemble's features-mode covariate (item 17).  When omitted it
+    resolves to the cached site temperature (real Open-Meteo or the modeled
+    seasonal fallback — never a network call on this path), so the envelope
+    reads the correct season at demo time.
     """
+    if temperature is None:
+        try:  # cached, never-raises accessor (item 8 NEW-02)
+            from app import site_temperature as _st
+            temperature = _st.get_site_temp().get("temp_c")
+        except Exception:
+            temperature = None
     arr = np.asarray(window, dtype=np.float64).reshape(-1)
     if arr.size < 64:
         return 0.0, 0.05
@@ -156,7 +168,9 @@ def get_anomaly(window, fs: int = 100) -> Tuple[float, float]:
         # trained_push is documented as returning [0, 1] (envelope-relative
         # deviation); item 11 enforces the bound so a buggy model can never pull
         # the floor score negative or past 1.0.
-        push = float(np.clip(float(demo_predictor.trained_push(arr, fs=fs)), 0.0, 1.0))
+        push = float(np.clip(float(demo_predictor.trained_push(arr, fs=fs,
+                                                               temperature=temperature)),
+                             0.0, 1.0))
     except Exception as exc:  # pragma: no cover - depends on models agent
         log.debug("trained push unavailable, floor only (%s)", exc)
 

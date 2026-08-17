@@ -74,6 +74,10 @@ class AnomalyDetector:
         self._lock = threading.Lock()
         self._buffer: list[np.ndarray] = []
         self._warmup_done = False
+        # Item-17 temperature covariate: applied to the features-mode VAE/OCSVM
+        # input (feature 6).  Set per-call via trained_deviation(.., temperature=..)
+        # or globally via set_temperature (warm-up path has no per-call override).
+        self._temperature: float | None = None
 
         # healthy-envelope floor+push fusion (decision #5, false-alarm-proof):
         # the trained model can only PUSH the anomaly estimate above the
@@ -215,7 +219,18 @@ class AnomalyDetector:
         return out
 
     # ----------------------------------------------------------- baseline feed
-    def _trained_raw(self, window: np.ndarray) -> tuple[float, float]:
+    def set_temperature(self, temperature_c: float | None) -> None:
+        """Set the ambient temperature (°C) used for the features-mode VAE/OCSVM.
+
+        The warm-up path (`add_healthy` / `score` during warm-up) has no per-call
+        temperature override, so it reads this.  `trained_deviation(.., T=..)`
+        and `_trained_raw(.., T=..)` may override per call.
+        """
+        with self._lock:
+            self._temperature = temperature_c
+
+    def _trained_raw(self, window: np.ndarray,
+                     temperature: float | None = None) -> tuple[float, float]:
         """Mean raw trained score + uncertainty across enabled trained components.
 
         Returns (0.0, 1.0) when the ensemble is inert (degenerate loaded scaler)
@@ -226,10 +241,11 @@ class AnomalyDetector:
         """
         if self._scaler_degenerate:
             return 0.0, 1.0
+        t = temperature if temperature is not None else self._temperature
         scores: list[float] = []
         uncs: list[float] = []
         if self._ocsvm is not None:
-            s, u = self._score_vae_ocsvm(window)
+            s, u = self._score_vae_ocsvm(window, temperature=t)
             scores.append(s)
             uncs.append(u)
         if self._lstm_cfg:
@@ -302,7 +318,8 @@ class AnomalyDetector:
             self._heuristic = HeuristicAnomalyScorer(fs=self.fs)
 
     # ------------------------------------------------------ trained-only push
-    def trained_deviation(self, window: np.ndarray) -> float:
+    def trained_deviation(self, window: np.ndarray,
+                          temperature: float | None = None) -> float:
         """Envelope-relative trained evidence, used as a PUSH on the backend floor.
 
         Returns a float in [0, 1] = how far the trained ensemble's raw score
@@ -312,11 +329,12 @@ class AnomalyDetector:
         declared INERT — ROADMAP line 40), so an uninformative model can never
         create a false alarm. The deterministic spectral floor (owned by
         backend/app/anomaly.py) is always the base; this only adds honest
-        trained evidence on top.
+        trained evidence on top.  `temperature` overrides the detector-level
+        temperature for this window (features-mode VAE/OCSVM covariate).
         """
         w = self._prep(window)
         with self._lock:
-            t_s, _ = self._trained_raw(w)
+            t_s, _ = self._trained_raw(w, temperature=temperature)
             if not self._warmup_done:
                 # warm-up: absorb as healthy evidence (demo healthy phase does this)
                 self._buffer.append(w)
@@ -332,18 +350,22 @@ class AnomalyDetector:
             return _clamp(dev * self.trained_push)
 
     # --------------------------------------------------------- trained scoring
-    def _vae_input(self, window: np.ndarray) -> np.ndarray:
+    def _vae_input(self, window: np.ndarray,
+                   temperature: float | None = None) -> np.ndarray:
         cfg = self._vae_cfg
         if cfg.get("mode") == "features":
-            return feat_mod.extract_features(window, fs=self.fs)[None, :].astype(np.float64)
+            return feat_mod.extract_features(window, fs=self.fs,
+                                             temperature=temperature)[None, :].astype(np.float64)
         return window[None, :].astype(np.float64)
 
-    def _score_vae_ocsvm(self, window: np.ndarray) -> tuple[float, float]:
+    def _score_vae_ocsvm(self, window: np.ndarray,
+                         temperature: float | None = None) -> tuple[float, float]:
         import torch
         if self._scaler_degenerate:  # inert ensemble must not score (ROADMAP line 40)
             return 0.0, 1.0
         cfg = self._vae_cfg
-        x = self._vae_input(window)
+        t = temperature if temperature is not None else self._temperature
+        x = self._vae_input(window, temperature=t)
         if self._scaler is not None:
             x = self._scaler.transform(x)
         xt = torch.tensor(x, dtype=torch.float32, device=self._device)
@@ -394,6 +416,12 @@ class AnomalyDetector:
         cfg = self._lstm_cfg
         model = self._lazy_lstm()
         seq_len = int(cfg.get("seq_len", self.window_n))
+        # Item-17 scale robustness: when the LSTM-AE was trained on RMS-normalized
+        # windows, normalize by RMS here so demo-scale (~5e-2) and real-Z24
+        # (~1e-3) windows map into the same dynamic range.
+        if cfg.get("scale_norm"):
+            s = float(np.sqrt(np.mean(window.astype(np.float64) ** 2))) or 1.0
+            window = window.astype(np.float64) / s
         w = window[-seq_len:] if window.size >= seq_len else self._prep(window)
         xt = torch.tensor(w, dtype=torch.float32, device=self._device)[None, :, None]
 

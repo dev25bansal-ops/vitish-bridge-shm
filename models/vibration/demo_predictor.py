@@ -54,8 +54,13 @@ def _build_detector():
     return AnomalyDetector(weights_dir=_DEFAULT_WEIGHTS, n_healthy=_N_HEALTHY)
 
 
-def trained_push(window, fs: int = 100) -> float:
-    """Return the trained ensemble's envelope-relative evidence, float in [0,1]."""
+def trained_push(window, fs: int = 100, temperature: float | None = None) -> float:
+    """Return the trained ensemble's envelope-relative evidence, float in [0,1].
+
+    ``temperature`` (optional °C) is forwarded to the features-mode VAE/OCSVM
+    covariate; the backend passes the current site temperature so the envelope
+    reads the season correctly (item 17).
+    """
     global _detector, _detector_failed
     if _detector is None and not _detector_failed:
         try:
@@ -68,7 +73,8 @@ def trained_push(window, fs: int = 100) -> float:
     if _detector is None:
         return 0.0
     try:
-        return _detector.trained_deviation(np.asarray(window, dtype=np.float64))
+        return _detector.trained_deviation(np.asarray(window, dtype=np.float64),
+                                           temperature=temperature)
     except Exception:  # pragma: no cover - trained scoring must never break the floor
         return 0.0
 

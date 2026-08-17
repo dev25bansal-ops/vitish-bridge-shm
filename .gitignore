@@ -117,5 +117,11 @@ Thumbs.db
 !data/z24/fixture/
 !data/z24/fixture/*.npy
 
+# Item-17 scale/temp retrain CANDIDATE + scratch output dirs.  Only artifacts
+# actually installed into models/weights/ (the shipped set above) are tracked;
+# experiments in weights_scratch/ / weights_scale_temp/ are never committed.
+/models/weights_scratch/
+/models/weights_scale_temp/
+
 # Re-generated demo artifacts (condition-report samples) — not committed
 /docs/samples/
