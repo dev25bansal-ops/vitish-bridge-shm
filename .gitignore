@@ -9,6 +9,9 @@ venv/
 *.pt
 *.onnx
 models/weights/*.pkl
+# Per-structure weight dirs (hbta_accel/, hbta_strain/) hold the same artifact
+# types — the top-level *.pkl rule only matches one level deep
+models/weights/*/*.pkl
 # Pre-retrain weight backups (one-off, re-generable)
 models/weights/bak-*/
 !models/weights/.gitkeep
@@ -98,3 +101,18 @@ tools/hbta_retrain/*_out/
 # OS
 Thumbs.db
 .DS_Store
+
+# ---------------------------------------------------------------------------
+# PostHackathon TEST-F3: COMMITTED trained artifacts + real-Z24 fixture so the
+# trained-ML gates (`test_trained_path.py`, `test_deconfounding.py` LEG C) run
+# on a fresh clone / CI instead of silently skipping.  Re-ignored: the big
+# retrainable weights (crack_seg.pt, hbta_*/, yolo_runs/) and the full 991 MB
+# Z24 benchmark (data/z24/inputs.npy + labels.npy).
+!models/weights/vae.pt
+!models/weights/ocsvm.pkl
+!models/weights/scaler.pkl
+!models/weights/lstm_ae.pt
+!models/weights/train_meta.json
+!models/weights/lstm_ae_meta.json
+!data/z24/fixture/
+!data/z24/fixture/*.npy

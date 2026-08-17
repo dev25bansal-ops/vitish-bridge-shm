@@ -1,0 +1,14 @@
+{
+  "artifact": "lstm autoencoder + MC-dropout",
+  "epochs": 30,
+  "hidden": 32,
+  "latent_dim": 16,
+  "threshold_p95_recon_loss": 3.308359453058074e-07,
+  "healthy_mean_loss": 8.71520029477324e-08,
+  "healthy_dropout_cv": 0.4731655418872833,
+  "n_windows": 4050,
+  "source": "z24",
+  "synthetic": false,
+  "healthy_segments": 270,
+  "windows": 4050
+}

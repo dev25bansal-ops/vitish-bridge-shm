@@ -11,12 +11,13 @@ pins the measured de-confounding evidence on the SHIPPED detector state:
          score stays < 0.20 at every season (GREEN — no thermal false alarm).
   LEG B  the SAME floor fires on the seeded rupture at both seasonal extremes
          (> 0.5) — flat-on-temperature-only is separation, not blindness.
-  LEG C  trained ensemble at REAL Z24 scale (skips when data/z24 is absent,
-         gitignored): healthy labels {0,1} stay ~0; damaged separates (mean >=
-         0.05); and the HONEST finding is pinned — later-campaign healthy label
-         {6} deviates (max >= 0.02), so the trained envelope is NOT
-         season-agnostic (a season-agnostic retrain must make this < 0.02, at
-         which point this assertion flips to that bound).
+  LEG C  trained ensemble at REAL Z24 scale (runs on the full benchmark OR the
+         committed fixture data/z24/fixture/ — TEST-F3, never silently skips):
+         healthy label {0} (the envelope's own state) stays ~0; damaged
+         separates (mean >= 0.05); and TWO documented healthy-state confounds
+         are pinned — labels {1} and {6} deviate (max >= 0.02), so the trained
+         envelope is NOT state-agnostic (a state-agnostic retrain must bring
+         these below 0.02, at which point these assertions flip to that bound).
   LEG D  trained ensemble at DEMO scale: the raw score is amplitude-saturated
          (constant ~0.98 for healthy AND damage), so the envelope makes the
          trained push ~0 for everything — the demo arc is carried by the
@@ -42,14 +43,14 @@ for _p in (BACKEND, ROOT):
 
 import numpy as np  # noqa: E402
 
+import _z24_data as _z24  # noqa: E402  (shared real-Z24 loader, fixture-or-full)
+
 from models.vibration import temperature as temp  # noqa: E402
 from models.vibration import stiffness as physics  # noqa: E402
 from models.vibration import seeded_defect as _sd  # noqa: E402
 from models.vibration.infer import AnomalyDetector  # noqa: E402
 
 WEIGHTS = ROOT / "models" / "weights"
-Z24 = ROOT / "data" / "z24" / "inputs.npy"
-Z24_LABELS = Z24.with_name("labels.npy")
 FS = 100.0
 N = 1024
 F1_REF = physics.F1_REF
@@ -58,9 +59,12 @@ F1_REF = physics.F1_REF
 # damage fires 0.720 / 0.939.  Bounds keep honest headroom.
 FLOOR_SEASONAL_CAP = 0.20        # < 0.35 healthy cap, 4.5x the measured 0.044
 FLOOR_DAMAGE_MIN = 0.50          # fires (measured 0.72-0.94)
-TRAINED_HEALTHY_DEV_MAX = 0.02   # healthy {0,1} stays ~0 (measured 0.0000)
-TRAINED_DAMAGED_DEV_MIN = 0.05   # damaged separates (measured mean 0.1158)
-TRAINED_LABEL6_DEV_MIN = 0.02    # documented confounding (measured max 0.3715)
+# Real-Z24 trained legs: bounds measured on BOTH the full benchmark and the
+# committed fixture (data/z24/fixture/, a deterministic real-Z24 sample).
+TRAINED_HEALTHY0_DEV_MAX = 0.02  # healthy label {0} (envelope's state) ~0 (measured 0.0000)
+TRAINED_DAMAGED_DEV_MIN = 0.05   # damaged separates (full-data label-2 mean 0.1158; fixture 0.058)
+TRAINED_HEALTHY1_DEV_MIN = 0.02  # documented confound: healthy label {1} deviates (full 0.2925, fixture 0.3063)
+TRAINED_LABEL6_DEV_MIN = 0.02    # documented confound: healthy label {6} deviates (measured max 0.3715)
 DEMO_SCALE_PUSH_MAX = 0.02       # demo-scale push ~0 for healthy AND damage
 
 _PASS = 0
@@ -176,52 +180,44 @@ def main() -> int:
            f"{d_sum:.3f}")
     print(f"    measured: rupture@winter {d_win:.3f} | rupture@summer {d_sum:.3f}")
 
-    # ---- LEG C: trained ensemble at REAL Z24 scale (skips when data absent) --
+    # ---- LEG C: trained ensemble at REAL Z24 scale (fixture or full data) ----
     HAS_TRAINED = bool((WEIGHTS / "vae.pt").exists() and (WEIGHTS / "ocsvm.pkl").exists())
-    HAS_REAL_Z24 = bool(Z24.exists() and Z24_LABELS.exists())
     print("[leg C] trained ensemble — REAL Z24 scale")
-    if HAS_TRAINED and HAS_REAL_Z24:
-        arr = np.load(Z24, mmap_mode="r")
-        lab = np.load(Z24_LABELS).ravel()
-        W = 1024
-
-        def z24_windows(labels_keep, segmax=90):
-            idx = np.where(np.isin(lab, labels_keep))[0][:segmax]
-            out = []
-            for s in idx:
-                for c in (6, 7, 8):
-                    row = arr[s, c]
-                    for i in range(0, 6000 - W + 1, W):
-                        out.append(row[i:i + W])
-            return np.stack(out).astype(np.float64)
-
-        hw01 = z24_windows([0, 1])
-        hw6 = z24_windows([6])
-        dw = z24_windows([2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
-        _seed()
-        det = AnomalyDetector(weights_dir=WEIGHTS, n_healthy=5)
-        for w in hw01[:5]:
-            det.score(w)  # real healthy warm-up builds the envelope at real scale
-        dev01 = [det.trained_deviation(w) for w in hw01[5:45]]
-        dev6 = [det.trained_deviation(w) for w in hw6[:40]]
-        dev_d = [det.trained_deviation(w) for w in dw[:40]]
-        _check(f"real healthy {{0,1}} dev stays ~0 (< {TRAINED_HEALTHY_DEV_MAX})",
-               max(dev01) < TRAINED_HEALTHY_DEV_MAX, f"max={max(dev01):.4f}")
-        _check(f"real damaged dev mean >= {TRAINED_DAMAGED_DEV_MIN} (separates)",
-               float(np.mean(dev_d)) >= TRAINED_DAMAGED_DEV_MIN, f"mean={np.mean(dev_d):.4f}")
-        # the HONEST finding, pinned so it cannot silently change: the trained
-        # envelope is NOT season/state-agnostic — later-campaign healthy label 6
-        # deviates like damage (measured max 0.3715).  A season-agnostic retrain
-        # must bring this below TRAINED_HEALTHY_DEV_MAX (then THIS assertion
-        # flips to that bound).
-        _check("documented confounding: healthy label {6} deviates (>= 0.02)",
-               max(dev6) >= TRAINED_LABEL6_DEV_MIN, f"max={max(dev6):.4f}")
-        print(f"    measured: healthy{{0,1}} max {max(dev01):.4f} | label{{6}} "
-              f"mean {np.mean(dev6):.4f} max {max(dev6):.4f} | damaged mean "
-              f"{np.mean(dev_d):.4f} max {max(dev_d):.4f}")
-    elif HAS_TRAINED and not HAS_REAL_Z24:
-        print("    real Z24 absent (data/z24/inputs.npy is gitignored) -> "
-              "real-scale trained leg runs on the trainer machine only")
+    if HAS_TRAINED:
+        z24 = _z24.load_windows()
+        if z24["present"]:
+            src = z24["source"]
+            print(f"    TRAINED_REAL_DATA=RUN({src})")
+            _seed()
+            det = AnomalyDetector(weights_dir=WEIGHTS, n_healthy=5)
+            for w in z24["hw0"][:5]:
+                det.score(w)  # real healthy warm-up builds the envelope at real scale
+            dev0 = [det.trained_deviation(w) for w in z24["hw0"][5:45]]
+            dev1 = [det.trained_deviation(w) for w in z24["hw1"][:40]]
+            dev6 = [det.trained_deviation(w) for w in z24["hw6"][:40]]
+            dev_d = [det.trained_deviation(w) for w in z24["dw"][:40]]
+            _check(f"real healthy label {{0}} (envelope's own state) dev stays ~0 "
+                   f"(< {TRAINED_HEALTHY0_DEV_MAX})",
+                   max(dev0) < TRAINED_HEALTHY0_DEV_MAX, f"max={max(dev0):.4f}")
+            _check(f"real damaged dev mean >= {TRAINED_DAMAGED_DEV_MIN} (separates)",
+                   float(np.mean(dev_d)) >= TRAINED_DAMAGED_DEV_MIN,
+                   f"mean={np.mean(dev_d):.4f}")
+            # the HONEST findings, pinned so they cannot silently change: the
+            # trained envelope is NOT state-agnostic — later-campaign healthy
+            # labels {1} and {6} deviate like damage (measured max ~0.31 / ~0.37).
+            # A state-agnostic retrain must bring both below
+            # TRAINED_HEALTHY0_DEV_MAX (then THESE assertions flip to that bound).
+            _check("documented confound: healthy label {1} deviates (>= 0.02)",
+                   max(dev1) >= TRAINED_HEALTHY1_DEV_MIN, f"max={max(dev1):.4f}")
+            _check("documented confound: healthy label {6} deviates (>= 0.02)",
+                   max(dev6) >= TRAINED_LABEL6_DEV_MIN, f"max={max(dev6):.4f}")
+            print(f"    measured: label{{0}} max {max(dev0):.4f} | label{{1}} "
+                  f"max {max(dev1):.4f} | label{{6}} max {max(dev6):.4f} | "
+                  f"damaged mean {np.mean(dev_d):.4f} max {max(dev_d):.4f}")
+        else:
+            print("    TRAINED_REAL_DATA=SKIP")
+            print("    real Z24 absent (data/z24/inputs.npy and data/z24/fixture/ "
+                  "both missing) -> trained leg skipped (floor legs above run)")
     else:
         print("    trained weights absent (models/weights/* gitignored) -> "
               "trained legs skipped (floor legs above still run)")

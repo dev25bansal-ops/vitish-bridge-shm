@@ -1,0 +1,12 @@
+{
+  "artifact": "vae + ocsvm + scaler",
+  "mode": "features",
+  "epochs": 60,
+  "latent_dim": 16,
+  "input_dim": 7,
+  "n_windows": 4050,
+  "source": "z24",
+  "synthetic": false,
+  "healthy_segments": 270,
+  "windows": 4050
+}

@@ -1,10 +1,13 @@
-name: CI — backend gates
+name: CI — backend gates + twin checks
 
 # Runs the unified test runner (scripts/run_tests.sh) on every push and PR.
-# The runner executes all 15 standalone backend test scripts (14 under
-# backend/tests/ + the arc verifier scripts/verify_demo_arc.py); any failure
-# fails the job.  The pinned demo arc (GREEN 87.1 -> AMBER 67.5 -> RED 33.6)
-# is one of them (test_demo_arc.py + verify_demo_arc.py) and must NEVER break.
+# The runner executes all 18 standalone test scripts (17 under backend/tests/
+# + the arc verifier scripts/verify_demo_arc.py); any failure fails the job.
+# The pinned demo arc (GREEN 87.1 -> AMBER 67.5 -> RED 33.6) is one of them
+# (test_demo_arc.py + verify_demo_arc.py) and must NEVER break.
+# PostHackathon TEST-F3: under CI the runner FAILS any trained-ML gate that
+# prints TRAINED_REAL_DATA=SKIP — the committed weights + Z24 fixture must make
+# them RUN real evidence on a fresh clone (no silent skip).
 on:
   push:
   pull_request:
@@ -32,8 +35,28 @@ jobs:
           OPENBLAS_NUM_THREADS: '1'
         run: bash scripts/run_tests.sh
 
-      - name: Twin typecheck
+      - name: Install twin dependencies
         run: |
           cd twin
           npm ci || npm install
+
+      - name: Twin lint (eslint, max-warnings=0)
+        run: |
+          cd twin
+          npm run lint
+
+      - name: Twin unit tests (vitest)
+        run: |
+          cd twin
+          npm run test
+
+      - name: Twin typecheck (tsc --noEmit)
+        run: |
+          cd twin
           npm run typecheck
+
+      - name: Twin production build (tsc + vite build)
+        run: |
+          cd twin
+          npm run build
+

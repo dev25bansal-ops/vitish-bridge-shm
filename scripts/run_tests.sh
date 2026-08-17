@@ -21,8 +21,10 @@ TESTS=(
   backend/tests/test_deterioration.py
   backend/tests/test_edge_node.py
   backend/tests/test_manifest.py
+  backend/tests/test_contract_parity.py
   backend/tests/test_seeded_defect.py
   backend/tests/test_stiffness.py
+  backend/tests/test_telegram_alerts.py
   backend/tests/test_temperature.py
   backend/tests/test_trained_path.py
   backend/tests/test_deconfounding.py
@@ -30,18 +32,28 @@ TESTS=(
 )
 
 FAILED=0
+TMPOUT=$(mktemp)
 for t in "${TESTS[@]}"; do
   echo "== ${t} =="
-  if ! python "$t"; then
+  if ! python "$t" 2>&1 | tee "$TMPOUT"; then
     echo "!! FAILED: ${t}"
+    FAILED=1
+  fi
+  # PostHackathon TEST-F3: a trained-ML gate that prints TRAINED_REAL_DATA=SKIP
+  # is honest locally, but on CI it is a FAIL — the committed fixture must make
+  # the gate RUN real evidence (no silent SKIP on a fresh clone).
+  if [ "${CI:-0}" = "1" ] && grep -q "TRAINED_REAL_DATA=SKIP" "$TMPOUT"; then
+    echo "!! CI=1: ${t} printed TRAINED_REAL_DATA=SKIP — the committed Z24 "
+    echo "   fixture (data/z24/fixture/) must make it TRAINED_REAL_DATA=RUN."
     FAILED=1
   fi
   echo
 done
+rm -f "$TMPOUT"
 
 echo "== ALL TESTS DONE =="
 if [ "$FAILED" -ne 0 ]; then
   echo "!! one or more tests failed"
   exit 1
 fi
-echo "== ALL 16 TEST FILES PASS =="
+echo "== ALL 18 TEST FILES PASS =="
