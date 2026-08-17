@@ -11,9 +11,16 @@ flips on:
                      hw6 max dev (flip: < 0.02)   damaged mean (>= 0.05)
   LEG D (demo):      demo-healthy push (~0)       demo-damaged push (flip: > 0.02)
 
-Measured across three ambient temperatures to show the envelope is
-temperature-INVARIANT (the label-{6} mechanism): at any T the healthy groups
-stay inside, the damaged groups fire.
+item-17 conditioning: every window is scored at its OWN IMPLIED temperature —
+invert the thermal f1 model f1(T)=f1_ref*(1-ALPHA*(T-20)) for the window's
+measured peak frequency (clamped to the training T_GRID).  The coordinated
+"temperature-diagonal" envelope is trained on {(spectrum at f1(T), T)} — the
+thin healthy curve — so a window must be queried at the T whose thermal f1
+matches its spectrum.  Healthy windows (on the seasonal curve) land on the
+diagonal and stay inside at any season; damaged windows (f1 below the entire
+seasonal band) sit off the diagonal at every implied T and fire.  The measured
++14.6% rupture → implied T ≈ 45 C → clamps to the grid edge (35 C), where the
+diagonal f1 is still 6.5% above the rupture's (deliberately) off-curve.
 
 Usage:
   python tools/probe_scale_temp.py --weights models/weights             # shipped
@@ -34,6 +41,7 @@ for _p in (ROOT, BACKEND, BACKEND / "tests"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+from models.vibration import features as feat_mod  # noqa: E402
 from models.vibration import seeded_defect as _sd  # noqa: E402
 from models.vibration import stiffness as physics  # noqa: E402
 from models.vibration import temperature as temp  # noqa: E402
@@ -43,8 +51,22 @@ import _z24_data as _z24  # noqa: E402  (real-Z24 loader, fixture or full)
 F1_REF = float(physics.F1_REF)
 FS = 100.0
 N = 1024
-TEMPS = (5.0, 15.0, 25.0)
+# Mirror the retrain's coordinated grid (tools/retrain_scale_temp.py T_GRID).
+T_GRID = (-5.0, 0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0)
+RESULT_TEMPS: list[float] = []
 RESULTS: dict = {}
+
+
+def implied_temperature_c(window: np.ndarray) -> float:
+    """Invert f1(T) for the window's measured peak frequency, clamped to
+    T_GRID.  A healthy window's implied T is the ambient it 'should' be at;
+    a damaged window (f1 below the whole seasonal band) saturates at the hot
+    grid edge, where its spectrum is still off the diagonal."""
+    f1 = float(feat_mod.extract_features(window, fs=FS)[1])
+    if not np.isfinite(f1) or f1 <= 0.0:
+        return temp.T_REF_C
+    t = temp.T_REF_C + (1.0 - f1 / F1_REF) / temp.ALPHA_PER_C
+    return float(np.clip(t, min(T_GRID), max(T_GRID)))
 
 
 def pink(rng: np.random.Generator) -> np.ndarray:
@@ -86,15 +108,23 @@ def demo_damage_windows(base_noise: tuple, seed0: int = 10) -> list[np.ndarray]:
     return out
 
 
-def probe_leg_c(det_factory, z24: dict, T: float) -> dict:
+def probe_leg_c(det_factory, z24: dict) -> dict:
     det = det_factory()
-    det.set_temperature(T)
     for w in z24["hw0"][:5]:
-        det.score(w)  # real healthy warm-up builds the envelope at real scale
-    dev0 = [det.trained_deviation(w, temperature=T) for w in z24["hw0"][5:45]]
-    dev1 = [det.trained_deviation(w, temperature=T) for w in z24["hw1"][:40]]
-    dev6 = [det.trained_deviation(w, temperature=T) for w in z24["hw6"][:40]]
-    devd = [det.trained_deviation(w, temperature=T) for w in z24["dw"][:40]]
+        det.set_temperature(implied_temperature_c(w))  # warm-up in ITS season
+        det.score(w)
+    dev0 = [det.trained_deviation(w, temperature=implied_temperature_c(w))
+            for w in z24["hw0"][5:45]]
+    dev1 = [det.trained_deviation(w, temperature=implied_temperature_c(w))
+            for w in z24["hw1"][:40]]
+    dev6 = [det.trained_deviation(w, temperature=implied_temperature_c(w))
+            for w in z24["hw6"][:40]]
+    devd = [det.trained_deviation(w, temperature=implied_temperature_c(w))
+            for w in z24["dw"][:40]]
+    RESULT_TEMPS.extend(implied_temperature_c(w) for w in z24["hw0"][:40])
+    RESULT_TEMPS.extend(implied_temperature_c(w) for w in z24["hw1"][:40])
+    RESULT_TEMPS.extend(implied_temperature_c(w) for w in z24["hw6"][:40])
+    RESULT_TEMPS.extend(implied_temperature_c(w) for w in z24["dw"][:40])
     return {"hw0_max": float(max(dev0)), "hw1_max": float(max(dev1)),
             "hw6_max": float(max(dev6)), "dw_mean": float(np.mean(devd)),
             "dw_max": float(max(devd))}
@@ -102,14 +132,16 @@ def probe_leg_c(det_factory, z24: dict, T: float) -> dict:
 
 def probe_leg_d(det_factory, base_noise: tuple) -> dict:
     det = det_factory()
-    det.set_temperature(15.0)
-    warm = demo_healthy_windows(base_noise)[:5]
-    for w in warm:
-        det.score(w)  # demo healthy warm-up builds the demo-scale envelope
-    h_push = [det.trained_deviation(w, temperature=15.0)
-              for w in demo_healthy_windows(base_noise)]
-    d_push = [det.trained_deviation(w, temperature=15.0)
+    healthy = demo_healthy_windows(base_noise)
+    for w in healthy[:5]:
+        det.set_temperature(implied_temperature_c(w))  # demo-healthy warm-up
+        det.score(w)
+    h_push = [det.trained_deviation(w, temperature=implied_temperature_c(w))
+              for w in healthy]
+    d_push = [det.trained_deviation(w, temperature=implied_temperature_c(w))
               for w in demo_damage_windows(base_noise)]
+    RESULT_TEMPS.extend(implied_temperature_c(w) for w in healthy)
+    RESULT_TEMPS.extend(implied_temperature_c(w) for w in demo_damage_windows(base_noise))
     return {"demo_healthy_push_max": float(max(h_push)),
             "demo_damage_push_max": float(max(d_push))}
 
@@ -132,14 +164,11 @@ def main() -> int:
     print(f"  Z24 source: {z24['source']}  hw0={len(z24['hw0'])} hw1={len(z24['hw1'])} "
           f"hw6={len(z24['hw6'])} dw={len(z24['dw'])}")
 
-    print("\n[LEG C] real Z24 scale — at three ambient temperatures")
-    leg_c = {}
-    for T in TEMPS:
-        r = probe_leg_c(make_det, z24, T)
-        leg_c[T] = r
-        print(f"  T={T:>3.0f}C -> hw0 max {r['hw0_max']:.4f} | hw1 max {r['hw1_max']:.4f} "
-              f"| hw6 max {r['hw6_max']:.4f} | damaged mean {r['dw_mean']:.4f} "
-              f"max {r['dw_max']:.4f}")
+    print("\n[LEG C] real Z24 scale — every window at its IMPLIED temperature")
+    leg_c = probe_leg_c(make_det, z24)
+    print(f"  hw0 max {leg_c['hw0_max']:.4f} | hw1 max {leg_c['hw1_max']:.4f} "
+          f"| hw6 max {leg_c['hw6_max']:.4f} | damaged mean {leg_c['dw_mean']:.4f} "
+          f"max {leg_c['dw_max']:.4f}")
 
     print("\n[LEG D] demo scale — trained push on demo healthy vs demo damage")
     rng = np.random.default_rng(999)
@@ -148,10 +177,15 @@ def main() -> int:
     print(f"  demo healthy push max {leg_d['demo_healthy_push_max']:.4f} | "
           f"demo damage push max {leg_d['demo_damage_push_max']:.4f}")
 
+    temps = np.asarray(RESULT_TEMPS)
+    if temps.size:
+        print(f"  implied-T distribution: min {temps.min():.1f} p50 {np.median(temps):.1f} "
+              f"max {temps.max():.1f} C")
+
     # ---- verdict vs the gate-16 flip targets --------------------------------
-    hw1 = min(v["hw1_max"] for v in leg_c.values())
-    hw6 = min(v["hw6_max"] for v in leg_c.values())
-    dwm = max(v["dw_mean"] for v in leg_c.values())
+    hw1 = leg_c["hw1_max"]
+    hw6 = leg_c["hw6_max"]
+    dwm = leg_c["dw_mean"]
     hp = leg_d["demo_healthy_push_max"]
     dp = leg_d["demo_damage_push_max"]
     flip_c = hw1 < 0.02 and hw6 < 0.02
@@ -159,7 +193,7 @@ def main() -> int:
     demo_fire = dp > 0.02
     print("\n=== VERDICT ===")
     print(f"  LEG C flip (hw1<0.02 AND hw6<0.02): {'YES' if flip_c else 'NO'} "
-          f"(hw1 min {hw1:.4f}, hw6 min {hw6:.4f})")
+          f"(hw1 {hw1:.4f}, hw6 {hw6:.4f})")
     print(f"  damaged separates (mean>=0.05): {'YES' if sep_ok else 'NO'} (mean {dwm:.4f})")
     print(f"  LEG D scale-fire (damage push>0.02): {'YES' if demo_fire else 'NO'} "
           f"(damage {dp:.4f})")
