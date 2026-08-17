@@ -18,6 +18,7 @@ TESTS=(
   backend/tests/smoke_test.py
   backend/tests/smoke_live_feed_unit.py
   backend/tests/test_api_routes.py
+  backend/tests/test_bugfix_regression.py
   backend/tests/test_condition.py
   backend/tests/test_cv_feed.py
   backend/tests/test_demo_arc.py

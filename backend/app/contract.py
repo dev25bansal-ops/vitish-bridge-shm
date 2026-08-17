@@ -190,6 +190,14 @@ Z24_DAMAGE_LABELS = [l for l in Z24_SCENARIOS if l not in Z24_HEALTHY_LABELS]
 LIVE_DEMO_BRIDGE = "live-demo"
 
 
+def _finite_number(x: Any) -> bool:
+    """True iff ``x`` is a real finite number (rejects bool, None, nan, inf)."""
+    try:
+        return isinstance(x, bool) is False and math.isfinite(float(x))
+    except (TypeError, ValueError):
+        return False
+
+
 def validate_accel(payload: dict[str, Any], bridge: str = BRIDGE_ID) -> list[str]:
     """Validate an accel row against the frozen contract; empty list = valid.
 
@@ -206,13 +214,7 @@ def validate_accel(payload: dict[str, Any], bridge: str = BRIDGE_ID) -> list[str
             errors.append(f"bridge must be '{LIVE_DEMO_BRIDGE}'")
         if payload.get("fs") != 0 or payload.get("samples") != []:
             errors.append("live-demo accel row is thin: fs=0, samples=[] (RMS-only feed)")
-        rms = payload.get("rms")
-        try:
-            rms_f = float(rms)
-            finite = math.isfinite(rms_f)
-        except (TypeError, ValueError):
-            finite = False
-        if isinstance(rms, bool) or not finite:
+        if not _finite_number(payload.get("rms")):
             errors.append("live-demo rms must be a finite number")
         if payload.get("flag") not in (0, 1):
             errors.append("flag must be 0 or 1")
@@ -226,4 +228,17 @@ def validate_accel(payload: dict[str, Any], bridge: str = BRIDGE_ID) -> list[str
     samples = payload.get("samples")
     if not isinstance(samples, list) or len(samples) != ACCEL_SAMPLES:
         errors.append(f"samples must be list of {ACCEL_SAMPLES} floats")
+    elif any(x is None for x in samples) or \
+            not all(_finite_number(x) for x in samples):
+        errors.append("samples must all be finite numbers")
+    # BUG-05: hero rows must also carry a valid node, finite rms and a {0,1} flag
+    # (the live-demo branch already enforced these; the hero branch did not, so a
+    # garbage node/rms/flag reached the ring and the store).
+    node = payload.get("node")
+    if not (isinstance(node, int) and not isinstance(node, bool) and node > 0):
+        errors.append("node must be a positive integer")
+    if not _finite_number(payload.get("rms")):
+        errors.append("rms must be a finite number")
+    if payload.get("flag") not in (0, 1):
+        errors.append("flag must be 0 or 1")
     return errors

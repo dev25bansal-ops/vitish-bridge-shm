@@ -22,9 +22,10 @@ arc.  The arc gate (backend/tests/test_demo_arc.py) pins BHI bands only.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from collections import deque
-from typing import Any, Deque, Dict, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 import numpy as np
 
@@ -77,6 +78,26 @@ def _peak_f1(samples: np.ndarray, fs: float) -> float:
     return float(fb[k])
 
 
+def _coerce_samples(samples) -> Optional[List[float]]:
+    """Numeric/finite coercion of an accel window — None on any bad sample.
+
+    BUG-03: a malformed window used to reach ``np.asarray(ring, dtype=float)``
+    through the event bus callback, raising ValueError there (ERROR spam) after
+    the ring was PARTIALLY extended.  Reject the whole window on the first
+    non-finite value so the tracker keeps flowing and the ring stays aligned.
+    """
+    out: List[float] = []
+    for x in samples:
+        try:
+            v = float(x)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(v):
+            return None
+        out.append(v)
+    return out
+
+
 class StiffnessTracker:
     def __init__(self, cfg: Settings, bus) -> None:
         self.cfg = cfg
@@ -114,12 +135,21 @@ class StiffnessTracker:
         if not isinstance(payload, dict) or not payload.get("samples"):
             return
         node = payload.get("node")
-        if int(node) != self._ref_node:
+        try:
+            node_id = int(node)
+        except (TypeError, ValueError):
+            return  # and never let bool('True')/garbage reach the ring keys
+        if isinstance(node, bool) or node_id != self._ref_node:
             return  # off-midspan channels observe a higher mode, not f1
+        vals = _coerce_samples(payload["samples"])
+        if vals is None:
+            log.warning("stiffness: dropped malformed accel window on node %d",
+                        node_id)
+            return  # BUG-03: reject the whole window, never partially extend
         with self._lock:
             ring = self._rings.setdefault(
-                int(node), deque(maxlen=self.cfg.window_n))
-            ring.extend(payload["samples"])
+                node_id, deque(maxlen=self.cfg.window_n))
+            ring.extend(vals)
             if len(ring) >= self.cfg.window_n:
                 f1 = _peak_f1(np.asarray(ring, dtype=float),
                               float(payload.get("fs") or self.cfg.fs))

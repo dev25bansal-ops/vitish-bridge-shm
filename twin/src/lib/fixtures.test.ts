@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mulberry32, generateFleet, FLEET_COUNT } from './fixtures'
+import { mulberry32, generateFleet, FLEET_COUNT, AUTO_RUPTURE_DELAY_S, replayScenarioAt } from './fixtures'
 import { stateFor } from '../store'
 
 describe('mulberry32 — deterministic PRNG', () => {
@@ -56,5 +56,18 @@ describe('generateFleet — deterministic offline fleet', () => {
       expect(ids.has(b.id)).toBe(false)
       ids.add(b.id)
     }
+  })
+})
+
+describe('replayScenarioAt — BUG-06 offline auto-advance', () => {
+  it('mirrors the live demo t=75 vibration-anomaly beat', () => {
+    expect(AUTO_RUPTURE_DELAY_S).toBe(75)
+  })
+
+  it('stays healthy before the beat and flips to rupture at it', () => {
+    expect(replayScenarioAt(0)).toBe('healthy')
+    expect(replayScenarioAt(AUTO_RUPTURE_DELAY_S - 1)).toBe('healthy')
+    expect(replayScenarioAt(AUTO_RUPTURE_DELAY_S)).toBe('rupture')
+    expect(replayScenarioAt(AUTO_RUPTURE_DELAY_S + 30)).toBe('rupture')
   })
 })

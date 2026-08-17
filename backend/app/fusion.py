@@ -22,10 +22,11 @@ and the WebSocket bridge see each snapshot exactly once.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from collections import deque
-from typing import Any, Deque, Dict, Optional
+from typing import Any, Deque, Dict, List, Optional
 
 import numpy as np
 
@@ -151,15 +152,49 @@ class FusionService:
             # else: a non-registry bridge (edge nodes, live-demo).  Fusion never
             # fuses those feeds into a BHI — they have their own handlers.
 
+    @staticmethod
+    def _coerce_samples(samples) -> Optional[List[float]]:
+        """Numeric/finite coercion of an accel window — None on any bad sample.
+
+        BUG-03: a malformed window used to raise inside the ring mutation
+        (``ring.extend(float(x) for x in samples)``) through the event bus
+        callback, spamming ERROR logs and leaving the ring PARTIALLY extended.
+        Reject the WHOLE window on the first non-finite value so the ring stays
+        consistent and the pipeline keeps flowing.
+        """
+        out: List[float] = []
+        for x in samples:
+            try:
+                v = float(x)
+            except (TypeError, ValueError):
+                return None
+            if not math.isfinite(v):
+                return None
+            out.append(v)
+        return out
+
+    @staticmethod
+    def _coerce_node(node) -> Optional[int]:
+        """Node id must be a positive int (rejects None, bool, '6x', 12.5)."""
+        if isinstance(node, bool) or not isinstance(node, int):
+            return None
+        return node if node > 0 else None
+
     def _hero_accel(self, node: Any, samples) -> None:
         """The hero bridge's anomaly-scored BHI path (unchanged from item 1)."""
+        node_id = self._coerce_node(node)
+        vals = self._coerce_samples(samples)
+        if node_id is None or vals is None:
+            log.warning("fusion: dropped malformed hero accel (node=%r, %d samples)",
+                        node, len(samples) if samples is not None else 0)
+            return
         ring = self._rings.setdefault(
-            int(node), deque(maxlen=self.cfg.window_n))
-        ring.extend(float(x) for x in samples)
+            node_id, deque(maxlen=self.cfg.window_n))
+        ring.extend(vals)
         if len(ring) >= self.cfg.window_n:
             score, unc = get_anomaly(list(ring))
             self.vib_evidence = last_evidence()  # ROADMAP line 68
-            self._node_scores[int(node)] = score
+            self._node_scores[node_id] = score
             target = self.cfg.vib_base + score * (1.0 - self.cfg.vib_base)
             self.vib = 0.6 * self.vib + 0.4 * target
             scores = list(self._node_scores.values())
@@ -192,10 +227,16 @@ class FusionService:
         st = self._extras.get(bridge)
         if st is None:
             return
-        rms = float(np.sqrt(np.mean(np.asarray(samples, dtype=float) ** 2)))
-        ema = st["rms_ema"].get(node)
+        node_id = self._coerce_node(node)
+        vals = self._coerce_samples(samples)
+        if node_id is None or vals is None:
+            log.warning("fusion: dropped malformed extra accel (bridge=%s, node=%r)",
+                        bridge, node)
+            return
+        rms = float(np.sqrt(np.mean(np.asarray(vals, dtype=float) ** 2)))
+        ema = st["rms_ema"].get(node_id)
         ema = rms if ema is None else 0.9 * ema + 0.1 * rms
-        st["rms_ema"][node] = ema
+        st["rms_ema"][node_id] = ema
         dev = max(0.0, rms - ema) / max(ema, 1e-9)
         target = min(1.0, self.cfg.vib_base + 0.30 * dev)
         st["vib"] = 0.6 * st["vib"] + 0.4 * target

@@ -193,6 +193,9 @@ with tempfile.TemporaryDirectory(prefix="vitish-bridge-tag-") as td:
     bhi = st2.recent_bhi("z24", 10)
     _check("ENH-01 recent_bhi('z24') excludes foreign bhi",
            len(bhi) == 1 and bhi[0]["bhi"] == 87.0, str(bhi))
+    bhi = st2.recent_bhi("live-demo", 10)
+    _check("ENH-01 recent_bhi('live-demo') returns only its row (BUG-01)",
+           len(bhi) == 1 and bhi[0]["bhi"] == 60.0, str(bhi))
     al = st2.recent_alerts("z24", 10)
     _check("ENH-01 recent_alerts('z24') excludes foreign alert",
            len(al) == 1 and al[0]["text"] == "z24 alert", str(al))

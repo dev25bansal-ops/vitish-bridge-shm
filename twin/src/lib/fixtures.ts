@@ -7,6 +7,20 @@ import { spectrumMagnitudes } from './fft'
 
 export const FLEET_COUNT = 50
 
+// BUG-06: offline REPLAY never auto-advanced the seeded story — the rupture
+// arc, the scripted alerts and the collapse animation stayed dead code unless a
+// user clicked the Rupture button, while the LIVE path got its scenario change
+// from the demo driver's t=75 beat.  Mirror that beat: after a healthy baseline
+// the replay fixture sets scenario='rupture' once, per run.
+export const AUTO_RUPTURE_DELAY_S = 75 // mirrors demo_driver BEATS t=75 vibration-anomaly
+
+/** Pure timeline for the BUG-06 auto-advance — exported for the regression test
+ *  (no DOM needed).  A replay run starts healthy and flips to rupture at the
+ *  same wall-clock the live demo driver publishes the scenario change. */
+export function replayScenarioAt(elapsedSec: number): 'healthy' | 'rupture' {
+  return elapsedSec >= AUTO_RUPTURE_DELAY_S ? 'rupture' : 'healthy'
+}
+
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0
   return function () {
@@ -177,6 +191,7 @@ export function generateFleet(): Bridge[] {
 // ---------------------------------------------------------------------------
 
 let timers: number[] = []
+let scenarioTimer: number | undefined
 
 export function startReplay(): () => void {
   stopReplay()
@@ -185,6 +200,15 @@ export function startReplay(): () => void {
     useStore.setState({ bridges: generateFleet() })
   }
   useStore.setState({ wsStatus: 'replay' })
+
+  // BUG-06: auto-advance the story once, after a healthy baseline — the same
+  // t=75 beat the live demo driver publishes (scenario='rupture').  A manual
+  // Healthy click after this holds (mirrors the live driver's hold-final-state).
+  scenarioTimer = window.setTimeout(() => {
+    if (replayScenarioAt(AUTO_RUPTURE_DELAY_S) === 'rupture') {
+      useStore.getState().setScenario('rupture')
+    }
+  }, AUTO_RUPTURE_DELAY_S * 1000)
 
   const rand = mulberry32(20260813)
   const fs = 100
@@ -319,4 +343,8 @@ export function startReplay(): () => void {
 export function stopReplay(): void {
   for (const t of timers) window.clearInterval(t)
   timers = []
+  if (scenarioTimer !== undefined) {
+    window.clearTimeout(scenarioTimer)
+    scenarioTimer = undefined
+  }
 }

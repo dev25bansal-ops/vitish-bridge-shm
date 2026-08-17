@@ -14,7 +14,7 @@ import { useStore, computeBhi, stateFor } from '../store'
 import type { AlertSource, Severity } from '../store'
 import { spectrumMagnitudes } from './fft'
 import { startReplay, stopReplay } from './fixtures'
-import { wsUrl, fetchBridges } from './config'
+import { wsUrl, fetchBridges, discoverConfig } from './config'
 import { warnOnce } from './warnOnce'
 
 // 127.0.0.1 (not "localhost") — the backend WS bridge binds IPv4 0.0.0.0, and
@@ -23,6 +23,11 @@ import { warnOnce } from './warnOnce'
 // port comes from /api/config when the backend is up (lib/config.ts).
 const FALLBACK_TIMEOUT_MS = 3000
 const RETRY_DELAY_MS = 5000
+// Cap how long attempt() waits for port re-discovery before opening the socket:
+// on a machine with NO backend the walk is pure quick refuses, but behind a
+// firewall that black-holes localhost a slow discovery must not hold up the
+// honest REPLAY fallback (the socket's 3 s timeout is what starts replay).
+const DISCOVERY_AWAIT_MS = 600
 
 interface FrameDetection {
   cls?: string
@@ -158,6 +163,18 @@ function attempt(): void {
   }
   ws = null
 
+  // BUG-04: re-discover the backend's real ports on EVERY attempt — the old
+  // one-shot latch meant a backend that booted late (or on a fallback port)
+  // was never rediscovered and the twin stayed in REPLAY forever.  discovery
+  // is cheap on localhost (closed ports refuse instantly); the cap only guards
+  // a slow firewall-blackholed walk from holding up the honest REPLAY path.
+  void Promise.race([
+    discoverConfig(),
+    new Promise((r) => setTimeout(r, DISCOVERY_AWAIT_MS)),
+  ]).then(() => openSocket())
+}
+
+function openSocket(): void {
   const sock = new WebSocket(wsUrl())
   ws = sock
 

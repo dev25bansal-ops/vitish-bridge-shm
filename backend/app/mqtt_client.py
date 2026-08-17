@@ -339,7 +339,9 @@ def emit(topic: str, payload: dict, publisher: Optional[Publisher],
     The bus fallback is also taken when the broker is up for the publisher but
     NOT for a started subscriber (asymmetric startup or a broker death the
     publisher hasn't noticed yet): publishing only to MQTT would otherwise drop
-    the message from the bus consumers entirely (item 5, ROADMAP-NEXT).
+    the message from the bus consumers entirely (item 5, ROADMAP-NEXT).  It is
+    also taken when ``publish()`` itself returns False (write failed): the
+    message must not vanish between broker branches (BUG-02).
     """
     broker_delivering = (
         publisher is not None
@@ -347,9 +349,15 @@ def emit(topic: str, payload: dict, publisher: Optional[Publisher],
         and not _subscriber_down()
     )
     ok = publisher.publish(topic, payload, qos=qos) if publisher is not None else False
-    if bus is not None and not broker_delivering:
+    # BUG-02 fix: the bus fallback used to be gated on broker_delivering alone.
+    # If publish() returned False (e.g. broker flagged connected but the write
+    # failed), the message was dropped entirely — no MQTT, no bus.  Fall back on
+    # the bus whenever the message did NOT actually make it to the broker.
+    bus_took = False
+    if bus is not None and (not broker_delivering or not ok):
         bus.publish(topic, payload, source="offline-fallback")
-    return ok
+        bus_took = True
+    return ok or bus_took
 
 
 def make_mqtt_router(bus):

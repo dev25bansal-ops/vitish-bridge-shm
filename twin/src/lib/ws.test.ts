@@ -156,10 +156,13 @@ describe('ingest — contract payload guards', () => {
 
 // --- state machine ----------------------------------------------------------
 describe('connect — WS state machine (LIVE → REPLAY → retry)', () => {
-  it('opens to LIVE, unwraps the envelope, drops to REPLAY, and retries forever', () => {
+  it('opens to LIVE, unwraps the envelope, drops to REPLAY, and retries forever', async () => {
     vi.useFakeTimers()
 
     connect()
+    // BUG-04: attempt() awaits port re-discovery before dialing (capped), so the
+    // socket appears on a microtask flush rather than synchronously.
+    await vi.advanceTimersByTimeAsync(0)
     expect(MockWebSocket.instances).toHaveLength(1)
     expect(MockWebSocket.instances[0].url).toBe('ws://127.0.0.1:8765')
 
@@ -180,8 +183,9 @@ describe('connect — WS state machine (LIVE → REPLAY → retry)', () => {
     MockWebSocket.close(0)
     expect(useStore.getState().wsStatus).toBe('replay')
 
-    // 5 s later the retry dials a fresh socket
+    // 5 s later the retry dials a fresh socket (discovery → microtask)
     vi.advanceTimersByTime(5000)
+    await vi.advanceTimersByTimeAsync(0)
     expect(MockWebSocket.instances).toHaveLength(2)
     MockWebSocket.open(1)
     expect(useStore.getState().wsStatus).toBe('live')
@@ -190,10 +194,12 @@ describe('connect — WS state machine (LIVE → REPLAY → retry)', () => {
     MockWebSocket.close(1)
     expect(useStore.getState().wsStatus).toBe('replay')
     vi.advanceTimersByTime(5000)
+    await vi.advanceTimersByTimeAsync(0)
     expect(MockWebSocket.instances).toHaveLength(3)
     vi.advanceTimersByTime(3000) // fallback timeout on the unopened socket
     expect(useStore.getState().wsStatus).toBe('replay')
     vi.advanceTimersByTime(5000) // and it keeps retrying
+    await vi.advanceTimersByTimeAsync(0)
     expect(MockWebSocket.instances).toHaveLength(4)
   })
 })
