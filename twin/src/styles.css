@@ -1175,6 +1175,36 @@ button {
   margin-top: 4px;
 }
 
+/* --- NEW-02 site temperature (Open-Meteo / simulated fallback) --------------- */
+.site-temp-line {
+  font-family: var(--mono);
+  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  margin-top: 4px;
+}
+
+.site-temp-src {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.site-temp-src.measured {
+  color: #16a34a;
+  background: color-mix(in srgb, #16a34a 14%, transparent);
+}
+
+.site-temp-src.modeled {
+  color: var(--muted);
+  background: var(--panel-2);
+}
+
 .thermal-note {
   font-size: 11px;
   color: var(--muted);

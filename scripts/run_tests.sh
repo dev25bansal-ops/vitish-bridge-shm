@@ -10,6 +10,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
+# NEW-02: the site-temperature probe (Open-Meteo) is display-only, but the test
+# suite must stay deterministic and network-free — force the offline fallback.
+export VITISH_SITE_TEMP_DISABLE=1
+
 TESTS=(
   backend/tests/smoke_test.py
   backend/tests/smoke_live_feed_unit.py
@@ -23,6 +27,7 @@ TESTS=(
   backend/tests/test_manifest.py
   backend/tests/test_contract_parity.py
   backend/tests/test_seeded_defect.py
+  backend/tests/test_site_temperature.py
   backend/tests/test_stiffness.py
   backend/tests/test_telegram_alerts.py
   backend/tests/test_temperature.py
@@ -56,4 +61,4 @@ if [ "$FAILED" -ne 0 ]; then
   echo "!! one or more tests failed"
   exit 1
 fi
-echo "== ALL 18 TEST FILES PASS =="
+echo "== ALL 19 TEST FILES PASS =="

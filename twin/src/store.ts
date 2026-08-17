@@ -64,6 +64,20 @@ export interface StiffnessState {
   residualDriftPct?: number
   residualBandPct?: number
   residualInterpretation?: string
+  // NEW-02: real site temperature (Open-Meteo) — display/provenance only.
+  // Never fused into the BHI / anomaly floor / thermal model.  source flips to
+  // 'synthetic' (simulated seasonal model) when the site probe is unreachable.
+  siteTemp?: SiteTempState | null
+}
+
+/** NEW-02 honest site-temperature readout (see backend/app/site_temperature.py). */
+export interface SiteTempState {
+  tempC?: number
+  source?: 'open-meteo' | 'synthetic'
+  sourceLabel?: string
+  cached: boolean
+  fetchedAt?: number | null
+  note?: string
 }
 
 /** One channel's honest provenance (see backend/app/channel_models.py). */
@@ -82,6 +96,8 @@ export interface ManifestState {
   honestyNote: string
   liveFeedActive: boolean
   liveFeedBridge: string
+  /** NEW-02 site-temperature block from the backend manifest (or null offline). */
+  siteTemperature: SiteTempState | null
 }
 
 export interface Alert {
@@ -258,6 +274,7 @@ const MANIFEST_OFFLINE: ManifestState = {
   honestyNote: 'Waiting for the data-realism manifest (backend /api/manifest).',
   liveFeedActive: false,
   liveFeedBridge: '',
+  siteTemperature: null,
 }
 
 /** Honest "no data yet" default — the panel shows the offline label. */

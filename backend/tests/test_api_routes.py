@@ -57,6 +57,19 @@ _check("manifest 200", r.status_code == 200)
 _check("manifest data_source", b.get("data_source") == "synthetic", str(b.get("data_source")))
 _check("manifest channels", "channels" in b and len(b["channels"]) >= 1)
 _check("manifest honesty labels", "honesty" in b or "note" in str(b), str(list(b.keys())))
+# NEW-02: site_temperature block present on the wire, source honestly labeled
+_st = b.get("site_temperature")
+_check("manifest site_temperature block", isinstance(_st, dict), str(_st)[:80])
+if isinstance(_st, dict):
+    _check("site_temperature source valid",
+           _st.get("source") in ("open-meteo", "synthetic"), str(_st.get("source")))
+    _check("site_temperature label matches source",
+           ("simulated" in _st.get("source_label", "") and "not a measured sensor" in _st.get("source_label", ""))
+           if _st.get("source") == "synthetic" else
+           ("measured" in _st.get("source_label", "") and "Open-Meteo" in _st.get("source_label", "")),
+           str(_st.get("source_label")))
+    _check("site_temperature temp_c numeric", isinstance(_st.get("temp_c"), (int, float)),
+           str(_st.get("temp_c")))
 
 # --- /api/bridge/z24/stiffness (tracker not running -> guard) ------------------
 r = client.get("/api/bridge/z24/stiffness")
@@ -193,6 +206,19 @@ b = r.json()
 _check("stiffness running 200 + payload", r.status_code == 200
        and "error" not in b and b.get("f1_meas") == 3.80, str(b)[:120])
 _check("stiffness baseline_locked", b.get("baseline_locked") is True)
+# NEW-02: honest site-temperature block rides the stiffness payload
+_st = b.get("site_temp")
+_check("stiffness site_temp present", isinstance(_st, dict), str(_st)[:80])
+if isinstance(_st, dict):
+    _check("stiffness site_temp source valid",
+           _st.get("source") in ("open-meteo", "synthetic"), str(_st.get("source")))
+    _check("stiffness site_temp temp_c numeric",
+           isinstance(_st.get("temp_c"), (int, float)), str(_st.get("temp_c")))
+    _check("stiffness site_temp never strengths 'measured' on fallback",
+           "simulated" in _st.get("source_label", "")
+           if _st.get("source") == "synthetic"
+           else "Open-Meteo" in _st.get("source_label", ""),
+           str(_st.get("source_label")))
 r = client.get("/api/bridge/z24/seeded-defect")
 b = r.json()
 _check("seeded-defect running 200 + payload", r.status_code == 200

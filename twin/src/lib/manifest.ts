@@ -8,7 +8,7 @@
 // store keeps "replay fixtures (backend unreachable)" and the provenance panel
 // shows the offline state instead of inventing a data source.
 import { useStore } from '../store'
-import type { ChannelProvenance } from '../store'
+import type { ChannelProvenance, SiteTempState } from '../store'
 import { warnOnce } from './warnOnce'
 import { apiBase } from './config'
 
@@ -37,6 +37,34 @@ function mapChannels(raw: unknown): ChannelProvenance[] {
     .sort((a, b) => a.node - b.node)
 }
 
+const SITE_TEMP_SOURCES = ['open-meteo', 'synthetic'] as const
+type SiteTempSource = (typeof SITE_TEMP_SOURCES)[number]
+
+/**
+ * NEW-02: guarded parse of the backend's site-temperature block.  Source
+ * strings the twin was never taught degrade to the honest 'synthetic'
+ * (modeled) label instead of being shown verbatim — a foreign claim can never
+ * paint a modeled value as measured.  Returns null when the block is absent.
+ */
+export function parseSiteTemp(raw: unknown): SiteTempState | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as Record<string, unknown>
+  const src = typeof b.source === 'string' ? b.source : ''
+  const source: SiteTempSource = SITE_TEMP_SOURCES.includes(src as SiteTempSource)
+    ? (src as SiteTempSource)
+    : 'synthetic'
+  const tempC = typeof b.temp_c === 'number' ? (b.temp_c as number) : undefined
+  return {
+    tempC,
+    source,
+    sourceLabel:
+      typeof b.source_label === 'string' ? (b.source_label as string) : undefined,
+    cached: b.cached === true,
+    fetchedAt: typeof b.fetched_at === 'number' ? (b.fetched_at as number) : null,
+    note: typeof b.note === 'string' ? (b.note as string) : undefined,
+  }
+}
+
 async function poll(): Promise<void> {
   try {
     const res = await fetch(`${apiBase()}/api/manifest`)
@@ -62,6 +90,7 @@ async function poll(): Promise<void> {
         : 'Provenance manifest not available.',
       liveFeedActive: live.active === true,
       liveFeedBridge: typeof live.bridge === 'string' ? (live.bridge as string) : '',
+      siteTemperature: parseSiteTemp(m.site_temperature),
     })
   } catch {
     // backend unreachable — honest offline default stays in effect

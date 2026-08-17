@@ -191,8 +191,16 @@ def channel_entry(cfg: Settings, node: int, data_source: str) -> dict:
 def build_manifest(cfg: Settings, data_source: Optional[str] = None,
                    live_active: bool = False,
                    live_status: Optional[dict] = None,
-                   edge_status: Optional[dict] = None) -> dict:
-    """One self-describing data-realism manifest the UI (D1-6) reads."""
+                   edge_status: Optional[dict] = None,
+                   site_temp: Optional[dict] = None) -> dict:
+    """One self-describing data-realism manifest the UI (D1-6) reads.
+
+    ``site_temp`` (optional, NEW-02) is the honest site-temperature block from
+    ``app.site_temperature.get_site_temp`` — measured Open-Meteo when reachable,
+    else the simulated seasonal fallback with the matching source label.  Passed
+    by the API route (which probes); omitted by direct callers so the pure
+    manifest builder never touches the network.
+    """
     data_source = data_source or get_data_source()
     if data_source not in ("z24-replay", "synthetic", "live-demo"):
         data_source = "synthetic"
@@ -243,4 +251,14 @@ def build_manifest(cfg: Settings, data_source: Optional[str] = None,
         },
         "datasets": datasets,
     }
+    if site_temp is not None:
+        manifest["site_temperature"] = {
+            "site": site_temp.get("site", "Koppigen A1 (47.136, 7.578)"),
+            "temp_c": site_temp.get("temp_c"),
+            "source": site_temp.get("source"),
+            "source_label": site_temp.get("source_label"),
+            "cached": bool(site_temp.get("cached")),
+            "fetched_at": site_temp.get("fetched_at"),
+            "note": site_temp.get("note"),
+        }
     return manifest

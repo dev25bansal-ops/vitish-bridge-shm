@@ -12,6 +12,7 @@
 // store keeps its default (f1 3.8 Hz, no drift) and the mode animation falls
 // back to the reference simple-span sine (scene/collapse.ts).
 import { useStore, F1_REF_HZ } from '../store'
+import { parseSiteTemp } from './manifest'
 import { warnOnce } from './warnOnce'
 import { apiBase } from './config'
 
@@ -56,6 +57,9 @@ async function pollStiffness(): Promise<void> {
       residualInterpretation: typeof s.residual_interpretation === 'string'
         ? (s.residual_interpretation as string)
         : undefined,
+      // NEW-02: real site temperature (Open-Meteo or simulated fallback) —
+      // display/provenance only, same honest block shape as the manifest.
+      siteTemp: parseSiteTemp(s.site_temp),
     })
     // Keep the popup's live.freq honest when the overlay is authoritative.
     st.setLive({ freq: s.f1_meas as number })

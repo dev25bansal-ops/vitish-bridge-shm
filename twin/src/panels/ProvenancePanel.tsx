@@ -34,6 +34,9 @@ export const ProvenancePanel = memo(function ProvenancePanel() {
   const stiffness = useStore((s) => s.stiffness)
   const seeded = useStore((s) => s.seededDefect)
   const wsStatus = useStore((s) => s.wsStatus)
+  // NEW-02: the site-temperature block rides the manifest (D1-5) — same source
+  // of truth the panel reads for every other provenance claim.
+  const siteTemp = manifest.siteTemperature
 
   // Line 85: defensive guard — never trust the wire shape. The manifest poller
   // always sends an array, but a foreign/older backend could omit the field.
@@ -132,6 +135,19 @@ export const ProvenancePanel = memo(function ProvenancePanel() {
               <span className="meta-unit">(modeled)</span>
             </>
           )}
+        </div>
+      )}
+      {/* NEW-02: real site air temperature — the source chip flips so no surface
+          shows 'measured' when the probe fell back to the simulated model.  The
+          label text comes straight from the backend manifest, never invented. */}
+      {siteTemp?.tempC !== undefined && siteTemp.sourceLabel && (
+        <div className="site-temp-line">
+          <span className="meta-key">site temp</span>
+          <span className="meta-val">{siteTemp.tempC.toFixed(1)}°C</span>
+          <span className={`site-temp-src ${siteTemp.source === 'open-meteo' ? 'measured' : 'modeled'}`}>
+            {siteTemp.source === 'open-meteo' ? 'measured' : 'modeled'}
+          </span>
+          <span className="meta-unit">{siteTemp.sourceLabel}</span>
         </div>
       )}
       {stiffness.residualInterpretation && (

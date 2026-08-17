@@ -179,14 +179,17 @@ def create_app() -> FastAPI:
     def data_manifest() -> dict:
         """D1-5 data-realism manifest — what each channel actually is (real
         Z24 replay vs modeled synthetic), the documented measurement chain, and
-        the honesty labels the provenance UI (D1-6) reads."""
+        the honesty labels the provenance UI (D1-6) reads.  Also carries the
+        NEW-02 site-temperature block (measured Open-Meteo or simulated fallback)."""
         from app import channel_models as cm
+        from app import site_temperature as site_temp_mod
         feed = live_mod.get_live_feed()
         return cm.build_manifest(
             settings, cm.get_data_source(),
             live_active=feed is not None,
             live_status=feed.status() if feed else None,
-            edge_status=edge_mod.get_edge_status())
+            edge_status=edge_mod.get_edge_status(),
+            site_temp=site_temp_mod.get_site_temp())
 
     @app.get("/api/bridges")
     def bridges() -> dict:
@@ -235,14 +238,19 @@ def create_app() -> FastAPI:
     @app.get("/api/bridge/{bridge_id}/stiffness")
     def stiffness(bridge_id: str) -> dict:
         """Z24 box-girder physics overlay: measured f1, EI drift, model-inferred
-        damage %, FEM mode shapes.  Explainability only — never fuses into BHI."""
+        damage %, FEM mode shapes.  Explainability only — never fuses into BHI.
+        NEW-02: carries the honest site-temperature block (measured Open-Meteo
+        or simulated fallback) alongside the pinned simulated thermal overlay."""
         if bridge_id != settings.bridge_id:
             raise HTTPException(status_code=404, detail="no stiffness model for this bridge")
         tracker = stiffness_mod.get_tracker()
         if tracker is None:
             return {"error": "stiffness tracker not running",
                     "note": "start the stack (python -m app.run_all)"}
-        return tracker.snapshot()
+        snap = tracker.snapshot()
+        from app import site_temperature as site_temp_mod  # lazy: network probe
+        snap["site_temp"] = site_temp_mod.get_site_temp()
+        return snap
 
     @app.get("/api/bridge/{bridge_id}/seeded-defect")
     def seeded_defect(bridge_id: str) -> dict:
