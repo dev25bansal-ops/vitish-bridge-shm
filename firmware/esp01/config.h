@@ -20,6 +20,13 @@
 #define MQTT_PORT 1883
 
 // ---- node identity ----------------------------------------------------------
+// This ESP-01S fills the "esp01-1" edge slot.  The backend's edge monitor and
+// recorder subscribe to EVERY id in VITISH_EDGE_BRIDGES (default "esp32-1,
+// esp01-1" — see backend/app/edge_node.py, S8 fix), so a stock-flashed ESP-01S
+// publishing bridge/esp01-1/... is NEVER silently ignored.  Keep BRIDGE_ID a
+// per-device id ("esp01-1") — do NOT reuse the ESP32's id, or the twin would
+// mislabel this board's real hardware.  Run a host simulator for this slot with
+// `python scripts/edge_sim.py --bridge esp01-1`.
 #define BRIDGE_ID    "esp01-1"
 #define NODE_ID      1
 #define FW_VERSION   "vitish-edge-esp01-0.1"

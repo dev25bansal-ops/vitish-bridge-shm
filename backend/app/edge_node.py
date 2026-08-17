@@ -1,11 +1,14 @@
 """
-Real-hardware edge-node monitor (bridge='esp32-1').
+Real-hardware edge-node monitor (edge slot bridges; default 'esp32-1' + 'esp01-1').
 
-The ESP32 node publishes contract-shaped telemetry to the local MQTT broker
-on ``bridge/esp32-1/accel`` (+ ``bridge/esp32-1/status``).  The backend's
-existing subscriber already routes ``bridge/+/#`` onto the shared event bus, so
-this monitor just listens on the bus — no new ingestion path, no coupling to
-the z24 hero arc.
+The ESP32 / ESP-01S node firmware publishes contract-shaped telemetry to the
+local MQTT broker on ``bridge/<id>/accel`` (+ ``bridge/<id>/status``), where
+``<id>`` is one of ``EDGE_BRIDGES`` (firmware/esp32 -> ``esp32-1``,
+firmware/esp01 -> ``esp01-1``).  The backend's existing subscriber already
+routes ``bridge/+/#`` onto the shared event bus, so this monitor just listens on
+the bus — no new ingestion path, no coupling to the z24 hero arc.  The monitor
+and the edge recorder subscribe to EVERY edge bridge id (S8 fix: a stock-flashed
+ESP-01S was silently ignored because the monitor only listened for esp32-1).
 
 Honesty (the LIVE badge must show these labels, never a stronger claim):
   * The edge node has NO accelerometer attached — the accel window is a
@@ -18,78 +21,119 @@ Honesty (the LIVE badge must show these labels, never a stronger claim):
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from collections import deque
-from typing import Any, Deque, Dict, Optional
+from typing import Any, Deque, Dict, Iterable, Optional
 
 from app import contract
 
 log = logging.getLogger(__name__)
 
-EDGE_BRIDGE = "esp32-1"
+# Edge-node slot(s) the backend monitors.  Both committed firmware targets are
+# stock-flashed to one of these ids, so a stock ESP-01S is NOT silently ignored:
+# the monitor + edge recorder subscribe to every id here.  Override per pilot
+# with VITISH_EDGE_BRIDGES (comma-separated).
+_DEFAULT_EDGE_BRIDGES = ("esp32-1", "esp01-1")
+EDGE_BRIDGES: tuple[str, ...] = tuple(
+    b.strip() for b in
+    os.environ.get("VITISH_EDGE_BRIDGES", ",".join(_DEFAULT_EDGE_BRIDGES)).split(",")
+    if b.strip()) or _DEFAULT_EDGE_BRIDGES
+EDGE_BRIDGE = EDGE_BRIDGES[0]      # primary edge slot (manifest / back-compat)
 EDGE_HARDWARE = "ESP32 DevKit (CP2102) - ESP32-WROOM-32, 4 MB flash"
+ESP01_HARDWARE = "ESP-01S (ESP8266EX, 1 MB flash) — no ADC, BIST tone only"
 STALE_S = 8.0          # node publishes ~1 Hz; offline after 8 s of silence
 _RECENT_MAX = 120
 
 
 class EdgeNodeMonitor:
-    """Last-known state of the real edge node, fed by the shared event bus."""
+    """Last-known state of the real edge nodes, fed by the shared event bus.
 
-    def __init__(self, bus, bridge: str = EDGE_BRIDGE, stale_s: float = STALE_S) -> None:
+    State is tracked PER edge bridge id (esp32-1 / esp01-1 / configured set) so
+    `/api/bridge/<id>/state` returns the right node and a stock ESP-01S is not
+    silently ignored by a monitor that only watched esp32-1.
+    """
+
+    def __init__(self, bus, bridges: Iterable[str] = EDGE_BRIDGES,
+                 stale_s: float = STALE_S) -> None:
         self.bus = bus
-        self.bridge = bridge
+        self.bridges: tuple[str, ...] = tuple(bridges)
         self.stale_s = stale_s
-        self.received = 0
-        self.last_seen = 0.0
         self._lock = threading.Lock()
-        self._last: Dict[str, Any] = {}
-        self._recent: Deque[tuple] = deque(maxlen=_RECENT_MAX)  # (ts, rms, flag)
-        self._token: Optional[int] = None
+        self._state: Dict[str, Dict[str, Any]] = {
+            b: {"received": 0, "last_seen": 0.0, "last": {},
+                "recent": deque(maxlen=_RECENT_MAX)}
+            for b in self.bridges
+        }
+        self._tokens: list[int] = []
 
     # -- lifecycle ------------------------------------------------------------
     def start(self) -> None:
-        if self._token is None:
-            self._token = self.bus.subscribe(
-                f"bridge/{self.bridge}/#", self._on_event)
+        if not self._tokens:
+            for b in self.bridges:
+                self._tokens.append(self.bus.subscribe(
+                    f"bridge/{b}/#", self._on_event))
 
     def stop(self) -> None:
-        if self._token is not None:
-            self.bus.unsubscribe(self._token)
-            self._token = None
+        for tok in self._tokens:
+            self.bus.unsubscribe(tok)
+        self._tokens = []
 
     # -- bus -> status ----------------------------------------------------------
     def _on_event(self, topic: str, payload: Any) -> None:
         if not isinstance(payload, dict):
             return
+        parts = topic.split("/")
+        b = parts[1] if len(parts) > 1 and parts[0] == "bridge" else None
+        st = self._state.get(b)
+        if st is None:  # not an edge bridge this monitor watches
+            return
         with self._lock:
-            self.received += 1
-            self.last_seen = contract.now()
+            st["received"] += 1
+            st["last_seen"] = contract.now()
             if topic.endswith("/accel"):
-                self._last = {**payload, "_kind": "accel"}
+                st["last"] = {**payload, "_kind": "accel"}
                 if payload.get("rms") is not None:
-                    self._recent.append(
+                    st["recent"].append(
                         (payload.get("ts"), payload.get("rms"), payload.get("flag")))
             elif topic.endswith("/status"):
                 # heartbeat — the accel record is richer (rssi/heap/uptime/fw);
                 # only refresh rssi if it arrives fresh and don't clobber accel.
-                if payload.get("rssi") is not None and self._last.get("_kind") == "accel":
-                    self._last["rssi"] = payload.get("rssi")
+                if payload.get("rssi") is not None and st["last"].get("_kind") == "accel":
+                    st["last"]["rssi"] = payload.get("rssi")
 
     # -- API ---------------------------------------------------------------------
-    def status(self) -> Dict[str, Any]:
+    def status(self, bridge: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Status for one edge bridge (default: most recently active, else primary).
+
+        Returns None when `bridge` is not a monitored edge id.
+        """
         now = contract.now()
         with self._lock:
-            online = self.received > 0 and (now - self.last_seen) <= self.stale_s
-            last = dict(self._last)
-            recent = [{"ts": r[0], "rms": r[1], "flag": r[2]} for r in self._recent]
-            received = self.received
-            last_seen = self.last_seen
+            if bridge is None:
+                active = [b for b, st in self._state.items() if st["received"] > 0]
+                bridge = (max(active, key=lambda b: self._state[b]["last_seen"])
+                          if active else self.bridges[0])
+            st = self._state.get(bridge)
+            if st is None:
+                return None
+            online = st["received"] > 0 and (now - st["last_seen"]) <= self.stale_s
+            last = dict(st["last"])
+            recent = [{"ts": r[0], "rms": r[1], "flag": r[2]} for r in st["recent"]]
+            received = st["received"]
+            last_seen = st["last_seen"]
+        fw = last.get("fw") or ""
+        # honest hardware label: the actual reporting device (fw/source name it),
+        # never a fixed "ESP32" claim for an ESP-01S filling the same slot.
+        hardware = (ESP01_HARDWARE
+                    if bridge == "esp01-1" or fw.startswith("vitish-edge-esp01")
+                    else EDGE_HARDWARE)
         return {
             "enabled": True,
-            "bridge": self.bridge,
+            "bridge": bridge,
             "online": online,
-            "hardware": EDGE_HARDWARE,
+            "hardware": hardware,
             "received": received,
             "last_seen_ago_s": round(now - last_seen, 1) if received else None,
             "signal_kind": last.get("signal_kind", "self-test-bist"),
@@ -136,5 +180,5 @@ def get_edge_monitor() -> Optional[EdgeNodeMonitor]:
     return _edge
 
 
-def get_edge_status() -> Optional[dict]:
-    return _edge.status() if _edge is not None else None
+def get_edge_status(bridge: Optional[str] = None) -> Optional[dict]:
+    return _edge.status(bridge) if _edge is not None else None

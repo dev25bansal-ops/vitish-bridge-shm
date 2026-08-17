@@ -1,33 +1,37 @@
 #!/usr/bin/env python
 """
-Host-side simulator for the ESP32 edge node (bridge='esp32-1').
+Host-side simulator for the edge nodes (bridge='esp32-1' default).
 
 Replicates the firmware's EXACT signal logic (deterministic xorshift PRNG, 5 Hz
 self-test/BIST tone, rolling RMS, on-device flag) and publishes contract-shaped
-payloads to a local MQTT broker on bridge/esp32-1/accel + /status — the same
-messages the real board (firmware/esp32) will send.  Used to bench-test the
-backend LIVE-badge path before the ESP is on the network.
+payloads to a local MQTT broker on bridge/<id>/accel + /status — the same
+messages the real boards (firmware/esp32, firmware/esp01) will send.  Used to
+bench-test the backend LIVE-badge path before the ESP is on the network.
+
+The simulated node id is chosen with --bridge (env VITISH_EDGE_BRIDGE, default
+esp32-1).  Use --bridge esp01-1 to stand in for a stock ESP-01S and verify the
+backend monitors that slot too (VITISH_EDGE_BRIDGES, S8 fix).
 
 Honest by construction: the accel window is the labeled self-test tone, exactly
 as the device sends it.  This script is a TEST HARNESS, not a data source.
 
 Usage:
-    python scripts/edge_sim.py --broker 127.0.0.1 --port 1883 [--secs 15]
+    python scripts/edge_sim.py --broker 127.0.0.1 --port 1883 [--secs 15] \\
+        [--bridge esp01-1]
 """
 from __future__ import annotations
 
 import argparse
 import json
 import math
-import random
+import os
 import sys
 import time
 
 import paho.mqtt.client as mqtt
 
-BRIDGE = "esp32-1"
+BRIDGE = os.environ.get("VITISH_EDGE_BRIDGE", "esp32-1")
 NODE = 1
-FW = "vitish-edge-esp32-0.1"
 SIGNAL_KIND = "self-test-bist"
 FS = 100
 WINDOW = 100
@@ -36,6 +40,12 @@ BIST_AMP = 0.05
 NOISE_AMP = 0.004
 FLAG_FACTOR = 2.5
 FLAG_FLOOR = 0.10
+
+
+def _fw_for(bridge: str) -> str:
+    """Firmware version string matching the committed board for that slot."""
+    return ("vitish-edge-esp01-0.1" if bridge == "esp01-1"
+            else "vitish-edge-esp32-0.1")
 
 # deterministic xorshift32 — identical to the firmware's _frand()
 _seed = 0xC0FFEE
@@ -68,20 +78,25 @@ def main() -> int:
     ap.add_argument("--broker", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=1883)
     ap.add_argument("--secs", type=int, default=12)
+    ap.add_argument("--bridge", default=BRIDGE,
+                    help="simulated node id (env VITISH_EDGE_BRIDGE, "
+                         "default %(default)s)")
     args = ap.parse_args()
 
+    bridge = args.bridge
+    fw = _fw_for(bridge)
     client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                         client_id="edge-sim-host")
+                         client_id=f"edge-sim-host-{bridge}")
     client.reconnect_delay_set(min_delay=1, max_delay=5)
 
     def on_connect(c, u, f, rc, props):
         if getattr(rc, "value", -1) == 0:
-            print(f"[sim] connected to {args.broker}:{args.port}")
+            print(f"[sim] {bridge} connected to {args.broker}:{args.port}")
             # status heartbeat exactly as the firmware sends it
             client.publish(
-                f"bridge/{BRIDGE}/status",
-                json.dumps({"bridge": BRIDGE, "node": NODE, "ts": time.time(),
-                            "online": True, "firmware": FW, "rssi": -60,
+                f"bridge/{bridge}/status",
+                json.dumps({"bridge": bridge, "node": NODE, "ts": time.time(),
+                            "online": True, "firmware": fw, "rssi": -60,
                             "signal_kind": SIGNAL_KIND}), qos=0)
 
     client.on_connect = on_connect
@@ -97,13 +112,13 @@ def main() -> int:
         baseline = rms if baseline is None else 0.95 * baseline + 0.05 * rms
         flag = 1 if (rms > FLAG_FACTOR * baseline and rms > FLAG_FLOOR) else 0
         payload = {
-            "bridge": BRIDGE, "node": NODE, "ts": round(time.time(), 3),
+            "bridge": bridge, "node": NODE, "ts": round(time.time(), 3),
             "fs": FS, "samples": samples, "rms": round(rms, 5), "flag": flag,
-            "signal_kind": SIGNAL_KIND, "source": BRIDGE, "rssi": -60,
+            "signal_kind": SIGNAL_KIND, "source": bridge, "rssi": -60,
             "heap": 28480, "uptime_s": int(time.time() - 1700000000),
-            "fw": FW,
+            "fw": fw,
         }
-        info = client.publish(f"bridge/{BRIDGE}/accel", json.dumps(payload), qos=0)
+        info = client.publish(f"bridge/{bridge}/accel", json.dumps(payload), qos=0)
         sent += 1
         if sent % 5 == 0:
             print(f"[sim] sent {sent} accel msgs (rms={rms:.4f} flag={flag})")
@@ -111,7 +126,7 @@ def main() -> int:
 
     client.loop_stop()
     client.disconnect()
-    print(f"[sim] done — {sent} messages published to bridge/{BRIDGE}/accel")
+    print(f"[sim] done — {sent} messages published to bridge/{bridge}/accel")
     return 0
 
 

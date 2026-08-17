@@ -17,7 +17,12 @@ MQTT_HOST = "172.20.169.83"        # laptop WiFi IPv4 (ipconfig)
 MQTT_PORT = 1883
 
 # --- identity ----------------------------------------------------------------
-BRIDGE = "esp32-1"                 # must match backend EDGE_BRIDGE
+# This ESP32 fills the "esp32-1" edge slot — the PRIMARY id in the backend's
+# EDGE_BRIDGES set (default "esp32-1, esp01-1", see backend/app/edge_node.py).
+# The monitor + recorder subscribe to every id in that set, so keep this id
+# distinct from the ESP-01S's "esp01-1": each board is labelled by its real
+# hardware, never mislabeled.
+BRIDGE = "esp32-1"                 # primary edge slot (backend EDGE_BRIDGES[0])
 NODE = 1
 FW = "vitish-edge-esp32-0.1"
 SIGNAL_KIND = "self-test-bist"     # honest label — tone, not real vibration
