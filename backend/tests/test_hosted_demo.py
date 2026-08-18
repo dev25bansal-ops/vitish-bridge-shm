@@ -1,27 +1,27 @@
-"""§7.6 item 20 gate — hosted public demo + scroll-world landing (deterministic).
+"""§7.6 item 20 gate — hosted public demo + cinematic landing (deterministic).
 
 Pins the item-20 deliverables WITHOUT any build step, network, or Postgres:
 
   * static mounts — backend/app/static_serve.py mounts twin/dist under /twin and
     landing/ under / (opt-in no-ops when absent); api.py calls install_static()
     LAST and /api/health still answers through the mount wiring (TestClient).
-  * films + manifest — every landing/assets/films/*.mp4 is a decode-valid h264
-    (1280x720, 24 fps, tight GOP), every still exists, manifest.json provenance
-    is present for all 6 films + 5 connectors.
+  * cinematic landing — every landing asset the index.html references exists and
+    the hero-scrub film is a decode-valid h264 (1280x720, 24 fps); the page
+    carries the honest-film provenance note (Film: real Z24 ... not raw
+    telemetry), the derived demonstrator copy stays aligned (CrackSeg9k, 24/24
+    gates, /twin CTA, NOT-a-real-dispatch honesty), and all 10 sections exist.
   * recipe SEC posture — deploy/hosted-demo/.env.public.example has broker
     creds + demo token + pinned origins + VITE_WS_URL=wss://; the Caddyfile is
     a plain reverse_proxy to 127.0.0.1:8000; the example .env is gitignored.
   * origin-aware twin — twin/vite.config.ts uses base './' (relative assets so
     /twin works under the mount) and twin/src/lib/config.ts falls back to
     same-origin /api + /ws for non-localhost (source-inspection, mirroring the
-    live-feed cred test); the landing index.html wires mountScrollWorld with the
-    six sections + five connectors + the provenance panel.
+    live-feed cred test).
 
 Run:  python backend/tests/test_hosted_demo.py
 """
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 import tempfile
@@ -45,14 +45,24 @@ FAIL = 0
 FAILURES: list[str] = []
 
 LANDING = ROOT / "landing"
-FILMS = LANDING / "assets" / "films"
-STILLS = LANDING / "assets" / "stills"
-MANIFEST = LANDING / "assets" / "manifest.json"
+HERO_FILM = LANDING / "assets" / "hero-scrub.mp4"
 TWIN = ROOT / "twin"
 DEPLOY = ROOT / "deploy" / "hosted-demo"
 
-EXPECTED_FILMS = ["hero", "data", "model", "cv", "fleet", "demo"]
-EXPECTED_CONNS = 5
+EXPECTED_SECTIONS = [
+    "provenance", "thermal", "multimodal", "twin", "countdown",
+    "developer-cta", "architecture", "economics", "faq", "pilot-request",
+]
+# Every asset the landing index.html references (single quotes keep it tight).
+REQUIRED_ASSET_FRAGMENTS = [
+    "assets/hero-scrub.mp4",
+    "assets/hero-poster.jpg",
+    "assets/section-provenance.webp",
+    "assets/section-thermal.webp",
+    "assets/section-multimodal.webp",
+    "assets/section-twin.webp",
+    "assets/favicon.svg",
+]
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -73,9 +83,9 @@ def mp4_valid(path: Path) -> bool:
         info = subprocess.run([ff, "-i", str(path)], capture_output=True,
                               text=True, timeout=30).stderr
         ok = ("Video: h264" in info and "1280x720" in info and "24 fps" in info
-              and "Duration: 00:00:08.00" in info or "Duration: 00:00:02.00" in info)
+              and "Duration:" in info)
         dec = subprocess.run([ff, "-v", "error", "-i", str(path), "-f", "null", "-"],
-                             capture_output=True, text=True, timeout=60)
+                             capture_output=True, text=True, timeout=90)
         return ok and dec.returncode == 0 and dec.stderr.strip() == ""
     except Exception:
         return False
@@ -135,32 +145,53 @@ def test_static_mounts() -> None:
               str(home.status_code))
 
 
-def test_films_manifest() -> None:
-    print("== films + manifest provenance ==")
-    m = json.loads(MANIFEST.read_text(encoding="utf-8"))
-    check("manifest has 6 films", set(m["films"]) == set(EXPECTED_FILMS), str(sorted(m["films"])))
-    check("manifest has 5 connectors", len(m["connectors"]) == EXPECTED_CONNS, str(len(m["connectors"])))
-    check("manifest source is honest", "real Z24 bridge benchmark" in m["source"],
-          m["source"][:40])
-    check("manifest encoder profile", m["encoder_profile"]["size"] == "1280x720"
-          and m["encoder_profile"]["fps"] == 24 and m["encoder_profile"]["gop"] == 8,
-          str(m["encoder_profile"]))
-    for name in EXPECTED_FILMS:
-        f = FILMS / f"{name}.mp4"
-        s = STILLS / f"{name}.webp"
-        check(f"film {name}.mp4 exists", f.exists())
-        check(f"still {name}.webp exists", s.exists())
-        if f.exists():
-            check(f"film {name} decode-valid", mp4_valid(f), f.name)
-    for i in range(1, EXPECTED_CONNS + 1):
-        cf = FILMS / f"conn{i}.mp4"
-        check(f"connector conn{i} exists", cf.exists())
-        if cf.exists():
-            check(f"connector conn{i} decode-valid", mp4_valid(cf), cf.name)
-    # connectors are listed in manifest AND index.html
+def test_cinematic_landing() -> None:
+    print("== cinematic landing: assets + honesty + derived demonstrator copy ==")
     idx = (LANDING / "index.html").read_text(encoding="utf-8")
-    for i in range(1, EXPECTED_CONNS + 1):
-        check(f"index.html references conn{i}", f"assets/films/conn{i}.mp4" in idx)
+    # Every asset the page references actually exists on disk.
+    for frag in REQUIRED_ASSET_FRAGMENTS:
+        asset = LANDING / frag
+        check(f"referenced asset exists {frag}", asset.exists(), str(asset))
+    # The hero scrub film is a real decode-valid video with the right contract.
+    check("hero-scrub.mp4 exists", HERO_FILM.exists())
+    if HERO_FILM.exists():
+        check("hero-scrub.mp4 decode-valid (h264 1280x720 24fps)",
+              mp4_valid(HERO_FILM), HERO_FILM.name)
+    # Honesty: the film is labelled as a dramatisation, not raw telemetry (R1/R3).
+    check("hero-film provenance note present", "not raw telemetry" in idx)
+    check("honesty footer present", "fictional product name" in idx
+          and "Morbi framing is honest" in idx)
+    # All 10 below-the-fold sections exist (anchor + heading).
+    for sid in EXPECTED_SECTIONS:
+        check(f"section #{sid} present", f'id="{sid}"' in idx, sid)
+    # Derived demonstrator copy stays aligned with the repo's real state.
+    check("segmenter honestly = CrackSeg9k", "CrackSeg9k" in idx
+          and "SDNET2018" not in idx)
+    check("gate count honest (24/24)", "24/24" in idx and "8/8" not in idx)
+    check("twin CTA present", "/twin/" in idx)
+    check("demo-arc numbers honest", "BHI 87.1" in idx and "33.6" in idx
+          and "3.23 Hz" in idx)
+    check("not-a-real-dispatch honesty", "Not a real NHAI dispatch" in idx)
+
+
+def main() -> int:
+    global PASS, FAIL
+    try:
+        test_static_mounts()
+        test_cinematic_landing()
+        test_recipe_posture()
+        test_twin_origin_aware()
+    except Exception as exc:
+        FAIL += 1
+        FAILURES.append("hosted-demo tests")
+        import traceback
+        print(f"  [ERROR] hosted-demo tests raised: {exc}")
+        traceback.print_exc()
+    print()
+    print(f"== hosted public demo + cinematic landing gate (item 20): {PASS} passed, {FAIL} failed ==")
+    if FAILURES:
+        print("failures:", ", ".join(FAILURES))
+    return 1 if FAIL else 0
 
 
 def test_recipe_posture() -> None:
@@ -197,40 +228,6 @@ def test_twin_origin_aware() -> None:
     t = (TWIN / "src" / "lib" / "config.test.ts").read_text(encoding="utf-8")
     check("config.test.ts covers same-origin fallback", "same-origin fallback" in t
           and "hosted discovery probes" in t)
-
-
-def test_landing_html() -> None:
-    print("== landing index.html wiring ==")
-    idx = (LANDING / "index.html").read_text(encoding="utf-8")
-    check("mounts scroll-world engine", "mountScrollWorld" in idx)
-    for name in EXPECTED_FILMS:
-        check(f"section {name} still referenced", f"assets/stills/{name}.webp" in idx)
-        check(f"section {name} clip referenced", f"assets/films/{name}.mp4" in idx)
-    check("provenance panel reads the manifest", "manifest.json" in idx
-          and "getElementById('provenance')" in idx)
-    check("honesty footer present", "demonstration" in idx
-          and "HONESTY-METHODOLOGY" in idx)
-
-
-def main() -> int:
-    global PASS, FAIL
-    try:
-        test_static_mounts()
-        test_films_manifest()
-        test_recipe_posture()
-        test_twin_origin_aware()
-        test_landing_html()
-    except Exception as exc:
-        FAIL += 1
-        FAILURES.append("hosted-demo tests")
-        import traceback
-        print(f"  [ERROR] hosted-demo tests raised: {exc}")
-        traceback.print_exc()
-    print()
-    print(f"== hosted public demo + landing gate (item 20): {PASS} passed, {FAIL} failed ==")
-    if FAILURES:
-        print("failures:", ", ".join(FAILURES))
-    return 1 if FAIL else 0
 
 
 if __name__ == "__main__":

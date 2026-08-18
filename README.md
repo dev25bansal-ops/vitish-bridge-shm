@@ -48,12 +48,17 @@ Then open the twin. The `▶ Replay damage arc` button runs the whole story; `Ge
 
 ## Landing page + hosted public demo
 
-The repo's landing page is a **scroll-scrubbed camera flight** (`landing/`) — six
-8-second dives + connector clips **rendered from the real Z24 benchmark**
-(`scripts/render_z24_films.py`, matplotlib → bundled ffmpeg), each labeled with
-its provenance in `landing/assets/manifest.json`. It is not a static marketing
-page, and it is not an AI video — it is the measured benchmark, scrubbed by a
-vendored MIT engine.
+The repo's landing page is a **cinematic scroll-driven site** (`landing/`, a
+single self-contained `index.html`) — a ~2200 vh hero scroll stage scrubs a
+**70 s hero film** (`assets/hero-scrub.mp4`) through six choreographed text
+bands + a BHI-gauge HUD, followed by ten sections (provenance, thermal,
+multimodal, twin, countdown, developer-cta, architecture, economics, faq,
+pilot-request) incl. a press-hold demo-arc simulator. The hero film is honestly
+labelled on-page as **an animated dramatisation of the measured Z24 mode
+shapes, not raw telemetry** (fixed provenance pill + footer disclosure), and
+the copy stays aligned to the repo's real state (CrackSeg9k-CC0 segmenter,
+24/24 gates, real arc BHI 87.1 → 33.6). `prefers-reduced-motion` falls back to
+a still poster.
 
 Servicing it is one command — the backend mounts the built twin at `/twin` and
 the landing at `/`:
@@ -62,7 +67,7 @@ the landing at `/`:
 cd backend && python app/run_all.py --demo   # with twin/dist present: http://localhost:8000/
 ```
 
-- Landing → `http://localhost:8000/` (scroll to fly through); the **demo section** CTA links to `/twin/`.
+- Landing → `http://localhost:8000/` (scroll to scrub the hero film); the **twin** section CTA links to `/twin/`.
 - Twin → `http://localhost:8000/twin/` — served same-origin, so the hosted
   non-localhost twin talks to `/api` + `/ws` on its own origin automatically.
 - Going public (hosting account + DNS) is the one external step — see [`deploy/hosted-demo/`](deploy/hosted-demo/README.md) for the secure-mode recipe (loopback binds, broker auth/ACL, token-gated demo route, exact-origin WS/CORS).
@@ -79,7 +84,7 @@ bash scripts/verify_gate.sh   # 24 gates — the pre-push merge gate
 backend/   Python pipeline: simulator, MQTT, Postgres, WebSocket bridge, FastAPI, demo driver
 models/    Vibration + CV + fusion + FEM stiffness/seeded-defect (train & inference)
 twin/      React Three Fiber digital twin + Cesium geo layer (served statically at /twin)
-landing/   scroll-world landing page (real-Z24 films + provenance) — served at /
+landing/   cinematic scroll-driven landing page (real-Z24 film + honest provenance) — served at /
 deploy/    hosting recipes — hosted-demo runs the SEC-mode public shape
 vault/     Obsidian knowledge base — research, build log, storyboard, Q&A prep
 data/      Dataset cache (gitignored)

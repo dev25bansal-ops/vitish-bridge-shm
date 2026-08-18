@@ -82,7 +82,7 @@ echo
 echo "== gate 23/24: §2.1 SEC hardening (SEC-01..04,06 — loopback compose binds + opt-in broker auth/ACL + token-gated demo route + WS origin validation + per-client cap) =="
 python backend/tests/test_security.py
 echo
-echo "== gate 24/24: hosted public demo + scroll-world landing (item 20 — static / + /twin mounts, real-Z24 films/manifest, hosted-demo SEC recipe, origin-aware twin) =="
+echo "== gate 24/24: hosted public demo + cinematic landing (item 20 — static / + /twin mounts, honest-provenance hero film, hosted-demo SEC recipe, origin-aware twin) =="
 python backend/tests/test_hosted_demo.py
 echo
 echo "== ALL 24 GATES PASS =="

@@ -29,7 +29,7 @@ WS ports (they fall back to the next free port if 8000/8765 are busy).
 
 **Landing + hosted twin (item 20):** with a twin production build present
 (`cd twin && npm run build` → `twin/dist/`), the backend serves both the
-scroll-world landing (with real-Z24 films) and the built twin on its own origin:
+cinematic scroll-driven landing page (real-Z24 hero film, honest provenance) and the built twin on its own origin:
 
 ```bash
 cd backend
@@ -191,8 +191,8 @@ cd twin && npm run lint && npm run test && npm run typecheck   # twin suite
 cd twin && npm run build         # production build check
 ```
 
-Check `http://localhost:8000/` renders the landing (scroll-scrubs through the
-real-Z24 films and CTA to `/twin/`), and `http://localhost:8000/twin/` connects
+Check `http://localhost:8000/` renders the landing (scroll-scrubs the cinematic
+hero film and open the section CTAs, incl. `/twin/`), and `http://localhost:8000/twin/` connects
 same-origin (`LIVE · backend ws` badge, no other host in the network tab).
 
 ---

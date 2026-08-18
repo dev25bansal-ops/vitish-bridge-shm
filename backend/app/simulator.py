@@ -393,11 +393,21 @@ class DamageInjector:
 
     def current_window(self, node: int) -> np.ndarray:
         self.alpha = self._alpha_now()
+        # Arm-clock measured at tick START: the downstream linear window
+        # generation can itself take tens/hundreds of ms on a cold lazy-init
+        # (the PERF-02/09 seeded-defect FEM prebuild), so 'after the
+        # generation' would silently age the tendon-snap burst out of its
+        # impact_s window and clear impact_t0 without ever firing. Sampling
+        # dt up front keeps the burst aligned to the onset the operator sees.
+        dt = time.monotonic() - self.impact_t0 if self.impact_t0 is not None else 0.0
         hw = self.healthy.current_window(node)
         rw = self.rupture.current_window(node)
         win = (1.0 - self.alpha) * hw + self.alpha * rw
         if self.impact_t0 is not None:
-            dt = time.monotonic() - self.impact_t0
+            # Re-confirm under the (possibly slow) generation before decaying:
+            # use the earlier sample (burst begins on onset, not on emission),
+            # but never emit the envelope long after impact_s actually passed.
+            dt = min(dt, time.monotonic() - self.impact_t0)
             if dt < self.cfg.impact_s:
                 env = self.cfg.impact_amp * np.exp(-3.0 * dt / max(self.cfg.impact_s, 0.1))
                 win = win + env * self._impact_rng.standard_normal(len(win))

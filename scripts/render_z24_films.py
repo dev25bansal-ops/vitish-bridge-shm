@@ -1,6 +1,8 @@
 #!/usr/bin/env python
-"""Render the VITISH landing page's scroll-world film clips from the REAL Z24
-bridge benchmark (item 20).
+"""Render real-Z24 scroll-world film clips — the ORIGINAL item-20 landing
+renderer, superseded 2026-08-18 by the cinematic scroll-driven landing
+(``landing/index.html``; this script's films/stills/manifest are no longer
+committed or served).  Kept as reusable, honest, re-renderable evidence tooling.
 
 Everything rendered here is real measured evidence — deterministic, reproducible,
 honest, and cheap:
@@ -18,7 +20,8 @@ matplotlib and encoded with the ffmpeg binary bundled in the ``imageio-ffmpeg``
 wheel (pinned encoder profile below — the scroll-world engine scrubs
 ``video.currentTime``, so the H.264 must carry a tight GOP and faststart).
 
-Outputs (all committed, the shipped evidence — re-renderable):
+Outputs (written to ``landing/assets/…`` for provenance by the superseded
+scroll-world landing — re-renderable, deterministic):
 
     landing/assets/stills/<name>.webp     scene posters (engine ``still``)
     landing/assets/films/<name>.mp4       scene film (engine ``clip``)

@@ -1,7 +1,7 @@
 # VITISH 2026 · PS#99 SHM — hosted public demo (landing + twin + backend).
 
 This is the **hosted-public-demo half** of COMPREHENSIVE-ANALYSIS §7.6 item 20:
-a single `run_all.py` process serves the scroll-world landing at `/`, the
+a single `run_all.py` process serves the cinematic landing at `/`, the
 digital-twin SPA at `/twin`, and the live API + WebSocket at `/api` + `/ws` —
 proxied by Caddy for public HTTPS.
 
@@ -13,7 +13,7 @@ on a laptop.
 
 | Path      | Served by                                                        |
 |-----------|------------------------------------------------------------------|
-| `/`       | `landing/` (scroll-world fly-through on **real Z24 films**)      |
+| `/`       | `landing/` (cinematic scroll site — hero film honestly labelled as a dramatisation of real Z24 mode shapes, not raw telemetry) |
 | `/twin`   | `twin/dist/` (built SPA, relative `./assets` URLs)               |
 | `/api`    | FastAPI backend (`backend/app/api.py`)                            |
 | `/ws`     | WebSocket bridge (origin-checked, SEC-03)                         |
@@ -77,7 +77,8 @@ Sanity: `python scripts/verify_demo_arc.py` still prints the pinned arc
 
 ## 5. Honesty (unchanged from the repo)
 
-The landing film is **real measured Z24 benchmark evidence** rendered by
-`scripts/render_z24_films.py` (provenance in `landing/assets/manifest.json`);
-the twin is a demonstration of the pipeline on the real benchmark — no live
-field sensors are claimed (`docs/HONESTY-METHODOLOGY.md`).
+The landing hero film is honestly labelled on-page as **an animated
+dramatisation of the measured Z24 mode shapes, not raw telemetry** (fixed
+provenance pill + footer disclosure); the twin is a demonstration of the
+pipeline on the real benchmark — no live field sensors are claimed
+(`docs/HONESTY-METHODOLOGY.md`).

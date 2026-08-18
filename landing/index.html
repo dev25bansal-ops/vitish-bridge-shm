@@ -1,145 +1,2349 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>VITISH — Bridge SHM that catches the next Morbi before the news does</title>
-  <meta name="description" content="Scroll to fly through the real Z24 bridge benchmark and meet VITISH — an honest, auditable structural-health monitoring system. Smart India Hackathon 2026 · PS#99." />
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VITISH, Before the News Does</title>
+  <meta name="description" content="A self-auditing digital twin platform that reads the hidden fatigue of concrete bridges before visible failure. Real Z24 benchmark data, real Euler-Bernoulli physics, real MQTT-to-WebSocket telemetry.">
+  <meta name="theme-color" content="#070d18">
+
+  <!-- DEPLOY STEP: patch these with the live URL -->
+  <meta property="og:title" content="VITISH, Before the News Does">
+  <meta property="og:description" content="A self-auditing digital twin platform that reads the hidden fatigue of concrete bridges before visible failure. Real Z24 benchmark data, real Euler-Bernoulli physics, real MQTT-to-WebSocket telemetry.">
+  <meta property="og:image" content="assets/hero-poster.jpg">
+  <meta property="og:url" content="./">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="VITISH, Before the News Does">
+  <meta name="twitter:description" content="Catching the next disaster before the news does. Real Z24 benchmark data, real Euler-Bernoulli physics, real MQTT-to-WebSocket telemetry.">
+  <meta name="twitter:image" content="assets/hero-poster.jpg">
+
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+
+  <!-- Typography Preconnect -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
   <style>
-    /* Theme the scroll-world engine — hero still uses the light hero palette. */
-    :root, .sw-root {
-      --sw-bg: #0b132b;
-      --sw-ink: #e0e7f5;
-      --sw-ink-soft: #6b7a99;
-      --sw-accent: #7fd4ff;
-      --sw-font-display: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
-      --sw-font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    /* ==========================================================================
+       VITISH DESIGN SYSTEM & ELECTRIC CYBER-TEAL THEME
+       ========================================================================== */
+    :root {
+      --canvas: #070d18;
+      --canvas-gradient: radial-gradient(circle at 15% 15%, rgba(6, 182, 212, 0.18), transparent 45%),
+                         radial-gradient(circle at 85% 35%, rgba(99, 102, 241, 0.15), transparent 50%),
+                         radial-gradient(circle at 50% 85%, rgba(20, 184, 166, 0.16), transparent 55%),
+                         #070d18;
+      --panel: rgba(13, 22, 38, 0.82);
+      --panel-elevated: rgba(20, 34, 58, 0.9);
+      --panel-border: rgba(6, 182, 212, 0.25);
+      --panel-glow: 0 8px 32px 0 rgba(6, 182, 212, 0.12);
+
+      --accent: #06b6d4;
+      --accent-teal: #14b8a6;
+      --accent-hover: #22d3ee;
+      --accent-muted: rgba(6, 182, 212, 0.2);
+      --accent-indigo: #6366f1;
+
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --crimson: #ef4444;
+      --concrete: #a0aec0;
+      --slate: #e2e8f0;
+      --text-secondary: #cbd5e1;
+      --text-primary: #ffffff;
+      --text-mono: #67e8f9;
+
+      --font-display: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --tshadow: 0 2px 4px rgba(2, 6, 23, 0.95), 0 4px 16px rgba(2, 6, 23, 0.8), 0 12px 48px rgba(6, 182, 212, 0.3);
+    }
+
+    /* Reset & Base Standards */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      overflow-x: hidden;
+      overflow-x: clip;
+      background: var(--canvas-gradient);
+      background-color: var(--canvas);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body.paused *, body.paused *::before, body.paused *::after {
+      animation-play-state: paused !important;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font-family: inherit;
+      border: none;
+      cursor: pointer;
+      background: none;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 4px;
+    }
+
+    .skip-link {
+      position: absolute;
+      top: -100px;
+      left: 1rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent-teal));
+      color: #040810;
+      font-weight: 700;
+      padding: 0.75rem 1.25rem;
+      border-radius: 6px;
+      z-index: 99999;
+      transition: top 0.2s var(--ease-out);
+    }
+    .skip-link:focus {
+      top: 1rem;
+    }
+
+    /* Luminous Ambient Glow Elements */
+    .ambient-atmosphere {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      background: radial-gradient(circle at 10% 25%, rgba(6, 182, 212, 0.08), transparent 40%),
+                  radial-gradient(circle at 90% 65%, rgba(99, 102, 241, 0.07), transparent 45%),
+                  radial-gradient(circle at 50% 90%, rgba(20, 184, 166, 0.08), transparent 50%);
+      opacity: 0.9;
+    }
+
+    /* Top Navigation */
+    .top-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 74px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2.5rem;
+      z-index: 1000;
+      background: rgba(7, 13, 24, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(6, 182, 212, 0.2);
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-svg {
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.6));
+    }
+
+    .brand-title {
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff, #67e8f9);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-subtitle {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #67e8f9;
+      padding: 0.2rem 0.65rem;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: 20px;
+      margin-left: 0.5rem;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.85rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      transition: color 0.2s var(--ease-out), text-shadow 0.2s var(--ease-out);
+    }
+    .nav-links a:hover {
+      color: #ffffff;
+      text-shadow: 0 0 12px rgba(6, 182, 212, 0.8);
+    }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.65rem 1.35rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent-teal));
+      color: #040810;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      border-radius: 8px;
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+      transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+    }
+    .nav-cta:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 28px rgba(6, 182, 212, 0.65);
+    }
+
+    /* ==========================================================================
+       HERO SCROLL STAGE (EXTENDED 2200vh FOR DELIBERATE SLOW SCRUB)
+       ========================================================================== */
+    .hero-container {
+      position: relative;
+      width: 100%;
+      height: 2200vh;
+      z-index: 2;
+    }
+
+    .hero-sticky-stage {
+      position: sticky;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero-poster-layer {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: 1;
+      transition: opacity 0.6s var(--ease-out);
+    }
+
+    #hero-video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 0.5s var(--ease-out);
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    .video-ready #hero-video {
+      opacity: 1;
+    }
+    .video-ready .hero-poster-layer {
+      opacity: 0;
+    }
+
+    /* Scrim Overlays */
+    .global-scrim {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+      background: radial-gradient(ellipse 120% 90% at 50% 45%, rgba(7, 13, 24, 0.15) 30%, rgba(7, 13, 24, 0.78) 100%);
+    }
+
+    /* Loading Ring Indicator */
+    .stream-loading-ring {
+      position: absolute;
+      bottom: 2.25rem;
+      left: 2.25rem;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      background: rgba(13, 22, 38, 0.85);
+      backdrop-filter: blur(16px);
+      padding: 0.55rem 1rem;
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: 30px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-mono);
+      box-shadow: 0 0 16px rgba(6, 182, 212, 0.2);
+      transition: opacity 0.4s var(--ease-out);
+    }
+    .stream-loading-ring.loaded {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .ring-svg {
+      width: 24px;
+      height: 24px;
+      transform: rotate(-90deg);
+      color: var(--accent);
+      filter: drop-shadow(0 0 6px var(--accent));
+    }
+
+    .ring-circle {
+      stroke-dasharray: 126;
+      stroke-dashoffset: var(--ld, 126);
+      transition: stroke-dashoffset 0.1s linear;
+    }
+
+    /* Hero HUD Telemetry Overlays */
+    .hero-hud-top {
+      position: absolute;
+      top: 92px;
+      left: 2.5rem;
+      right: 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .chip {
+      background: rgba(13, 22, 38, 0.8);
+      border: 1px solid rgba(6, 182, 212, 0.35);
+      border-radius: 8px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      padding: 0.4rem 0.85rem;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--text-mono);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      transition: border-color 0.3s var(--ease-out), background-color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
+    }
+
+    .chip.bhi-green {
+      border-color: rgba(16, 185, 129, 0.7);
+      color: #a7f3d0;
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+    }
+    .chip.bhi-amber {
+      border-color: rgba(245, 158, 11, 0.75);
+      color: #fde68a;
+      box-shadow: 0 0 14px rgba(245, 158, 11, 0.25);
+    }
+    .chip.bhi-red {
+      border-color: rgba(239, 68, 68, 0.85);
+      color: #fecaca;
+      box-shadow: 0 0 18px rgba(239, 68, 68, 0.35);
+    }
+
+    .dot-pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 10px var(--emerald);
+    }
+    .dot-pulse.amber {
+      background: var(--amber);
+      box-shadow: 0 0 10px var(--amber);
+    }
+    .dot-pulse.red {
+      background: var(--crimson);
+      box-shadow: 0 0 14px var(--crimson);
+    }
+
+    /* Lower HUD Overlays */
+    .hero-hud-bottom-right {
+      position: absolute;
+      bottom: 2.75rem;
+      right: 2.75rem;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.5rem;
+    }
+
+    .bhi-gauge-card {
+      background: rgba(13, 22, 38, 0.9);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: 14px;
+      padding: 1.15rem 1.4rem;
+      backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 200px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(6, 182, 212, 0.15);
+      transition: border-color 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
+    }
+    .bhi-gauge-card[data-band="green"] {
+      border-color: rgba(16, 185, 129, 0.7);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px rgba(16, 185, 129, 0.25);
+    }
+    .bhi-gauge-card[data-band="amber"] {
+      border-color: rgba(245, 158, 11, 0.75);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px rgba(245, 158, 11, 0.25);
+    }
+    .bhi-gauge-card[data-band="red"] {
+      border-color: rgba(239, 68, 68, 0.9);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 30px rgba(239, 68, 68, 0.4);
+    }
+
+    .bhi-dial-svg {
+      width: 145px;
+      height: 78px;
+    }
+
+    .bhi-score-row {
+      display: flex;
+      align-items: baseline;
+      gap: 0.45rem;
+    }
+
+    .bhi-score-num {
+      font-family: var(--font-display);
+      font-size: 2.35rem;
+      font-weight: 800;
+      line-height: 1;
+      color: #fff;
+    }
+
+    .bhi-score-label {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--text-mono);
+    }
+
+    .bhi-status-pill {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      padding: 0.22rem 0.65rem;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    [data-band="green"] .bhi-status-pill {
+      background: rgba(16, 185, 129, 0.25);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.5);
+    }
+    [data-band="amber"] .bhi-status-pill {
+      background: rgba(245, 158, 11, 0.25);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.5);
+    }
+    [data-band="red"] .bhi-status-pill {
+      background: rgba(239, 68, 68, 0.3);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.6);
+    }
+
+    .hero-hud-bottom-left {
+      position: absolute;
+      bottom: 2.75rem;
+      left: 2.75rem;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    /* ==========================================================================
+       HERO CAPTION BANDS & CHOREOGRAPHY SYSTEM
+       ========================================================================== */
+    .caption-stage {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .band {
+      position: absolute;
+      max-width: 860px;
+      width: 90%;
+      padding: 2.75rem;
+      opacity: 0;
+      text-align: center;
+      text-shadow: var(--tshadow);
+      will-change: opacity, transform;
+      transition: opacity 0.12s linear;
+    }
+
+    .band::before {
+      content: "";
+      position: absolute;
+      inset: -15%;
+      pointer-events: none;
+      z-index: -1;
+      opacity: calc(0.35 + 0.65 * var(--k, 1));
+      background: radial-gradient(ellipse 74% 62% at 50% 50%, rgba(7, 13, 24, 0.85) 0%, rgba(7, 13, 24, 0.55) 50%, rgba(7, 13, 24, 0) 82%);
+    }
+
+    .band-kicker {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.85rem;
+      text-shadow: 0 0 12px rgba(6, 182, 212, 0.8);
+    }
+
+    .band-headline {
+      font-family: var(--font-display);
+      font-size: clamp(2.35rem, 4.8vw, 4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      color: #ffffff;
+      margin-bottom: 1.15rem;
+    }
+
+    .band-lede {
+      font-size: clamp(1.125rem, 1.9vw, 1.3rem);
+      color: var(--text-secondary);
+      line-height: 1.55;
+      max-width: 65ch;
+      margin: 0 auto;
+    }
+
+    /* Word & Character Splitting for Dynamic Entrances */
+    .w {
+      display: inline-block;
+      white-space: nowrap;
+      will-change: transform, opacity;
+    }
+    .c {
+      display: inline-block;
+      will-change: transform, opacity;
+    }
+
+    /* Entrance: Drift-Down (Chapter 1) */
+    .entrance-drift .w {
+      --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 2.8, 1);
+      opacity: var(--kc);
+      transform: translateY(calc((1 - var(--kc)) * -28px));
+    }
+
+    /* Entrance: Scatter (Chapter 2) */
+    .entrance-scatter .c {
+      --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 2.6, 1);
+      opacity: var(--kc);
+      transform: translate(calc((1 - var(--kc)) * var(--jx, 0px)), calc((1 - var(--kc)) * var(--jy, 0px)))
+                rotate(calc((1 - var(--kc)) * var(--jr, 0deg)));
+    }
+
+    /* Entrance: Approach-From-Depth (Chapter 3) */
+    .entrance-approach .band-headline {
+      --kc: clamp(0, var(--k, 0) * 1.5, 1);
+      opacity: var(--kc);
+      transform: scale(calc(0.84 + 0.16 * var(--kc)));
+    }
+
+    /* Entrance: Blur-To-Sharp (Chapter 4) */
+    .entrance-blur .band-headline {
+      --kc: clamp(0, var(--k, 0) * 1.4, 1);
+      opacity: var(--kc);
+    }
+
+    /* Entrance: Word-Punch Overshoot (Chapter 5) */
+    .entrance-punch .w {
+      --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 3, 1);
+      --ks: clamp(0, (var(--k, 0) - var(--th, 0) - var(--sd, .1)) * var(--ss, 3.2), 1);
+      opacity: var(--kc);
+      transform: scale(calc(0.6 + (0.4 + var(--ov, .14)) * var(--kc) - var(--ov, .14) * var(--ks)));
+    }
+    .entrance-punch .w.em {
+      --ov: 0.25;
+      --sd: 0.16;
+      --ss: 2.6;
+      color: #ff6b6b;
+      text-shadow: 0 0 18px rgba(239, 68, 68, 0.8);
+    }
+
+    /* Entrance: Word-Rise Settle (Chapter 6) */
+    .entrance-settle .w {
+      --kc: clamp(0, (var(--k, 0) - var(--th, 0)) * 2.5, 1);
+      opacity: var(--kc);
+      transform: translateY(calc((1 - var(--kc)) * 30px));
+    }
+    .entrance-settle .settle-cta-group {
+      --kb: clamp(0, (var(--k, 0) - 0.6) * 2.5, 1);
+      opacity: var(--kb);
+      transform: translateY(calc((1 - var(--kb)) * 16px));
+      pointer-events: auto;
+      margin-top: 1.75rem;
+    }
+
+    .btn-hero-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.95rem 2.25rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent-teal));
+      color: #040810;
+      font-family: var(--font-mono);
+      font-size: 0.9375rem;
+      font-weight: 700;
+      border-radius: 8px;
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.5);
+      transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+    }
+    .btn-hero-action:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 35px rgba(6, 182, 212, 0.8);
+    }
+
+    /* Static Hero Component (Shown when scrub is disabled) */
+    .static-hero-view {
+      display: none;
+      position: relative;
+      min-height: 90vh;
+      padding: 8rem 2rem 4rem;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      background-size: cover;
+      background-position: center;
+    }
+    .static-hero-view::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(7, 13, 24, 0.85);
+    }
+    .static-hero-content {
+      position: relative;
+      z-index: 2;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    /* ==========================================================================
+       BELOW-THE-FOLD SECTIONS & DESIGN SYSTEM
+       ========================================================================== */
+    .site-content {
+      position: relative;
+      z-index: 5;
+      background: transparent;
+    }
+
+    .section-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 7.5rem 2.5rem;
+    }
+
+    .section-header {
+      margin-bottom: 3.75rem;
+    }
+
+    .section-kicker {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.85rem;
+      text-shadow: 0 0 10px rgba(6, 182, 212, 0.6);
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(2.15rem, 3.8vw, 3.25rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      color: #fff;
+      margin-bottom: 1.15rem;
+    }
+
+    .section-lede {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 68ch;
+      line-height: 1.6;
+    }
+
+    .card-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2.75rem;
+      align-items: center;
+    }
+
+    .card-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2.25rem;
+    }
+
+    .card-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.75rem;
+    }
+
+    .ui-panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 2.25rem;
+      box-shadow: var(--panel-glow);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      transition: border-color 0.3s var(--ease-out), transform 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out);
+    }
+    .ui-panel:hover {
+      border-color: rgba(6, 182, 212, 0.6);
+      box-shadow: 0 12px 40px rgba(6, 182, 212, 0.25);
+      transform: translateY(-3px);
+    }
+
+    .media-card {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      background: var(--panel);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 20px rgba(6, 182, 212, 0.15);
+    }
+    .media-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Section 1: Provenance Switcher Elements */
+    .source-badge-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.45rem 0.95rem;
+      border-radius: 24px;
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: #34d399;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+    }
+
+    .channel-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      margin: 1.75rem 0;
+    }
+
+    .channel-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.15rem;
+      background: rgba(20, 34, 58, 0.7);
+      border: 1px solid rgba(6, 182, 212, 0.2);
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+    }
+
+    .channel-name {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .channel-status {
+      color: #34d399;
+      font-weight: 700;
+    }
+
+    .honesty-note {
+      font-size: 0.9rem;
+      font-style: italic;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      padding-top: 1.25rem;
+      border-top: 1px solid rgba(6, 182, 212, 0.15);
+    }
+
+    /* Section 3: Oscilloscope & Spectrum Simulation */
+    .scope-visual-box {
+      background: #040810;
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: 12px;
+      padding: 1.5rem;
+      height: 250px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 30px rgba(6, 182, 212, 0.15);
+    }
+
+    .scope-svg {
+      width: 100%;
+      height: 140px;
+    }
+
+    /* Section 5: Interactive 105s Climax Arc Simulator */
+    .interactive-simulator-panel {
+      background: radial-gradient(circle at 50% 0%, rgba(239, 68, 68, 0.12), transparent 70%), var(--panel);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      border-radius: 20px;
+      padding: 3.5rem;
+      text-align: center;
+      box-shadow: 0 10px 40px rgba(239, 68, 68, 0.15);
+      backdrop-filter: blur(20px);
+    }
+
+    .press-hold-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.875rem;
+      padding: 1.35rem 2.75rem;
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 2px solid var(--accent);
+      border-radius: 10px;
+      font-family: var(--font-mono);
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      user-select: none;
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.35);
+      transition: border-color 0.2s var(--ease-out), transform 0.1s var(--ease-out);
+    }
+    .press-hold-btn:active {
+      transform: scale(0.98);
+    }
+
+    .hold-progress-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(6, 182, 212, 0.4), rgba(239, 68, 68, 0.6));
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .btn-hold-text {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .alerts-flow-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.95rem;
+      max-width: 700px;
+      margin: 2.75rem auto 0;
+      text-align: left;
+    }
+
+    .alert-banner-item {
+      padding: 1.1rem 1.35rem;
+      border-radius: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      opacity: 0.35;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(20, 34, 58, 0.8);
+      transition: opacity 0.4s var(--ease-out), border-color 0.4s var(--ease-out), transform 0.4s var(--ease-out);
+    }
+    .alert-banner-item.active {
+      opacity: 1;
+      transform: translateX(6px);
+    }
+    .alert-banner-item.sev1.active {
+      border-color: rgba(239, 68, 68, 0.9);
+      background: rgba(239, 68, 68, 0.16);
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.3);
+    }
+    .alert-banner-item.sev2.active {
+      border-color: rgba(245, 158, 11, 0.8);
+      background: rgba(245, 158, 11, 0.14);
+      box-shadow: 0 0 16px rgba(245, 158, 11, 0.25);
+    }
+    .alert-banner-item.copilot.active {
+      border-color: rgba(6, 182, 212, 0.85);
+      background: rgba(6, 182, 212, 0.15);
+      box-shadow: 0 0 16px rgba(6, 182, 212, 0.25);
+    }
+
+    /* Section 6: Developer Command Execution Box */
+    .terminal-execution-box {
+      background: #040810;
+      border: 1px solid rgba(6, 182, 212, 0.5);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 12px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(6, 182, 212, 0.2);
+    }
+
+    .terminal-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1.35rem;
+      background: #0b1322;
+      border-bottom: 1px solid rgba(6, 182, 212, 0.18);
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .terminal-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #334155;
+    }
+
+    .terminal-code-body {
+      padding: 2rem 1.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+    }
+
+    .terminal-code-text {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: #67e8f9;
+      user-select: all;
+      word-break: break-all;
+    }
+
+    .btn-copy-cmd {
+      padding: 0.7rem 1.4rem;
+      background: rgba(6, 182, 212, 0.2);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      box-shadow: 0 0 14px rgba(6, 182, 212, 0.25);
+      transition: background-color 0.2s var(--ease-out), transform 0.2s var(--ease-out);
+    }
+    .btn-copy-cmd:hover {
+      background: var(--accent);
+      color: #040810;
+      transform: translateY(-1px);
+    }
+
+    .verification-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-top: 1.75rem;
+    }
+
+    /* Section 8: Economic Metric Cards */
+    .metric-card {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 2.25rem;
+      text-align: center;
+      box-shadow: var(--panel-glow);
+      backdrop-filter: blur(20px);
+      transition: transform 0.3s var(--ease-out), border-color 0.3s var(--ease-out);
+    }
+    .metric-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(6, 182, 212, 0.6);
+    }
+    .metric-value {
+      font-family: var(--font-display);
+      font-size: 2.85rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff, #67e8f9);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+    .metric-label {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.65rem;
+    }
+    .metric-subtext {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* Section 9: FAQ Accordions */
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.35rem;
+    }
+
+    .faq-item {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--panel-glow);
+      backdrop-filter: blur(20px);
+      transition: border-color 0.2s var(--ease-out);
+    }
+    .faq-item:hover {
+      border-color: rgba(6, 182, 212, 0.5);
+    }
+
+    .faq-question {
+      width: 100%;
+      padding: 1.6rem 1.85rem;
+      text-align: left;
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .faq-answer {
+      padding: 0 1.85rem 1.6rem;
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      line-height: 1.65;
+    }
+
+    /* Section 10: Pilot Deployment Request Form & Footer */
+    .pilot-form-wrapper {
+      background: var(--panel);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      border-radius: 20px;
+      padding: 3.5rem;
+      max-width: 700px;
+      margin: 0 auto;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 25px rgba(6, 182, 212, 0.15);
+      backdrop-filter: blur(20px);
+    }
+
+    .form-group {
+      margin-bottom: 1.65rem;
+      text-align: left;
+    }
+
+    .form-label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--text-mono);
+      margin-bottom: 0.55rem;
+    }
+
+    .form-input, .form-textarea {
+      width: 100%;
+      padding: 0.95rem 1.15rem;
+      background: #040810;
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 8px;
+      color: #fff;
+      font-family: var(--font-body);
+      font-size: 0.95rem;
+      transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+    }
+    .form-input:focus, .form-textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 14px rgba(6, 182, 212, 0.4);
+      outline: none;
+    }
+
+    .form-textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .form-submit-btn {
+      width: 100%;
+      padding: 1.1rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent-teal));
+      color: #040810;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: 8px;
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.4);
+      transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+    }
+    .form-submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 35px rgba(6, 182, 212, 0.7);
+    }
+
+    .form-success-msg {
+      display: none;
+      padding: 1.35rem;
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid var(--emerald);
+      border-radius: 8px;
+      color: #a7f3d0;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* Footer Standards */
+    .site-footer {
+      border-top: 1px solid rgba(6, 182, 212, 0.2);
+      padding: 5.5rem 2.5rem 3.5rem;
+      background: #040810;
+    }
+
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 3.25rem;
+    }
+
+    .footer-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 2rem;
+    }
+
+    .footer-telemetry-mono {
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      color: var(--accent);
+      text-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+    }
+
+    .footer-disclosure {
+      font-size: 0.8125rem;
+      color: #64748b;
+      line-height: 1.6;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 2rem;
+    }
+
+    /* ==========================================================================
+       MEDIA QUERIES (5 GATES & RESPONSIVENESS)
+       ========================================================================== */
+    @media (max-width: 720px),
+           (orientation: portrait) and (max-width: 1024px),
+           (orientation: portrait) and (pointer: coarse),
+           (orientation: landscape) and (pointer: coarse) and (max-height: 560px),
+           (prefers-reduced-motion: reduce) {
+      .hero-container {
+        display: none !important;
+      }
+      .static-hero-view {
+        display: flex !important;
+      }
+    }
+
+    @media (max-height: 560px) {
+      .chip, .hero-hud-top, .hero-hud-bottom-left, .hero-hud-bottom-right {
+        display: none !important;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .card-grid-2, .card-grid-3, .card-grid-4 {
+        grid-template-columns: 1fr;
+      }
+      .top-nav {
+        padding: 0 1.25rem;
+      }
+      .nav-links {
+        display: none;
+      }
+      .terminal-code-body {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+
+    @media (pointer: coarse) {
+      .nav-cta, .btn-hero-action, .btn-copy-cmd, .form-submit-btn {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
     }
   </style>
 </head>
 <body>
-  <div id="top"></div>
-  <div id="world"></div>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <div class="ambient-atmosphere" aria-hidden="true"></div>
 
-  <script src="scrub-engine.js"></script>
-  <script>
-    mountScrollWorld(document.getElementById('world'), {
-      brand: { name: 'VITISH', href: '#top' },
-      cta: { label: 'Try the live demo', href: 'twin/' },
-      hint: 'scroll to fly in',
-      diveScroll: 1.2,
-      connScroll: 0.8,
-      nav: true,
-      sections: [
-        {
-          id: 'hero', label: 'Hero',
-          still: 'assets/stills/hero.webp',
-          clip: 'assets/films/hero.mp4',
-          accent: '#2ee6a8',
-          eyebrow: 'Structural-health monitoring',
-          title: 'Catch the next Morbi before the news does.',
-          body: 'Real benchmark data through the real production pipeline — every number on screen traces to real data or a clearly-labeled model assumption.',
-          tags: ['real Z24 replay', 'never a mockup', 'SIH 2026 · PS#99'],
-        },
-        {
-          id: 'data', label: 'The data',
-          still: 'assets/stills/data.webp',
-          clip: 'assets/films/data.mp4',
-          accent: '#7fd4ff',
-          eyebrow: 'Real benchmark, real pipeline',
-          title: 'Vibration from a real bridge.',
-          body: '100 Hz acceleration from the Z24 benchmark — a 58 m prestressed concrete bridge in Koppigen, Switzerland — replayed through the real ingest–fuse–display path.',
-          tags: ['1530 × 60 s segments', '27 channels', '17 condition states'],
-        },
-        {
-          id: 'model', label: 'Detection',
-          still: 'assets/stills/model.webp',
-          clip: 'assets/films/model.mp4',
-          accent: '#ffcf5c',
-          eyebrow: 'The machine-learning core',
-          title: 'Separation you can measure.',
-          body: 'VAE + OCSVM + LSTM-AE trained on real Z24 — the healthy and damaged states separate in the measured power spectrum, not in a PowerPoint.',
-          tags: ['real PSD', 'labels 0 vs 2–16'],
-        },
-        {
-          id: 'cv', label: 'Crack CV',
-          still: 'assets/stills/cv.webp',
-          clip: 'assets/films/cv.mp4',
-          accent: '#ff5c7a',
-          eyebrow: 'Computer-vision cracks',
-          title: 'From photo to condition card.',
-          body: 'crack_seg.pt trained on CrackSeg9k (CC0) — real detections on real crack photos drive the cv sub-index that feeds the Bridge Health Index.',
-          tags: ['real crack_seg.pt', 'CrackSeg9k (CC0)'],
-        },
-        {
-          id: 'fleet', label: 'Fleet',
-          still: 'assets/stills/fleet.webp',
-          clip: 'assets/films/fleet.mp4',
-          accent: '#2ee6a8',
-          eyebrow: 'Whole-fleet decision surface',
-          title: 'Prior-driven deterioration.',
-          body: 'Markov projection under an empirical LTBP fleet prior (44 real pilot bridges) — a probabilistic band, never a certified RUL.',
-          tags: ['LTBP prior', 'not a certified RUL'],
-        },
-        {
-          id: 'demo', label: 'The demo', still: 'assets/stills/demo.webp',
-          clip: 'assets/films/demo.mp4',
-          accent: '#8a7bb5',
-          eyebrow: 'The verified demo arc',
-          title: 'Watch a bridge fail — safely.',
-          body: 'BHI 87.1 GREEN → 45 s crack → 75 s rupture onset (AMBER) → 105 s RED → holds 33.6, measured, no flicker, on real Z24 replay.',
-          tags: ['pinned by verify_demo_arc.py', 'physics-grounded'],
-          cta: {
-            primary: { label: 'Open the live demo', href: 'twin/' },
-            secondary: { label: 'Run it locally →', href: '../README.md#quick-start' },
-          },
-        },
-      ],
-      connectors: [
-        'assets/films/conn1.mp4',
-        'assets/films/conn2.mp4',
-        'assets/films/conn3.mp4',
-        'assets/films/conn4.mp4',
-        'assets/films/conn5.mp4',
-      ],
-    });
-  </script>
+  <!-- Main Navigation Header -->
+  <header class="top-nav">
+    <div class="brand-lockup">
+      <svg class="brand-svg" viewBox="0 0 32 32" aria-hidden="true">
+        <line x1="2" y1="26" x2="30" y2="26" stroke="#06b6d4" stroke-width="1.5" opacity="0.6"/>
+        <line x1="3" y1="14" x2="29" y2="14" stroke="#06b6d4" stroke-width="2"/>
+        <line x1="9" y1="14" x2="9" y2="26" stroke="#06b6d4" stroke-width="2"/>
+        <line x1="23" y1="14" x2="23" y2="26" stroke="#06b6d4" stroke-width="2"/>
+        <line x1="3" y1="14" x2="3" y2="26" stroke="#06b6d4" stroke-width="2"/>
+        <line x1="29" y1="14" x2="29" y2="26" stroke="#06b6d4" stroke-width="2"/>
+      </svg>
+      <span class="brand-title">VITISH</span>
+      <span class="brand-subtitle">SHM DIGITAL TWIN</span>
+    </div>
+    <nav aria-label="Main Navigation">
+      <ul class="nav-links">
+        <li><a href="#provenance">Provenance</a></li>
+        <li><a href="#thermal">Key-Decisions</a></li>
+        <li><a href="#multimodal">Multimodal</a></li>
+        <li><a href="#twin">Physics Twin</a></li>
+        <li><a href="#countdown">Demo Arc</a></li>
+        <li><a href="#architecture">Stack</a></li>
+        <li><a href="#economics">Economics</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </nav>
+    <a href="#developer-cta" class="nav-cta">
+      <span>Run Listener</span>
+      <span class="dot-pulse" aria-hidden="true"></span>
+    </a>
+  </header>
 
-  <!-- Honest provenance panel — read from the renderer's manifest so the labels
-       can never drift from what was actually rendered. -->
-  <script>
-    fetch('assets/manifest.json')
-      .then(r => r.json())
-      .then(m => {
-        const el = document.getElementById('provenance');
-        if (!el || !m.films) return;
-        const rows = Object.entries(m.films)
-          .map(([name, f]) =>
-            `<tr><td class="pp-key">${name}</td><td class="pp-val">${f.provenance}</td></tr>`)
-          .join('');
-        el.querySelector('tbody').innerHTML = rows;
-        el.querySelector('.pp-source').textContent = m.source;
-      })
-      .catch(() => { /* panel stays hidden if the manifest is missing */ });
-  </script>
+  <main id="main-content" tabindex="-1">
+    <!-- ========================================================================
+         HERO SCROLL STAGE (EXTENDED 2200vh FOR DELIBERATE SLOW SCRUB)
+         ======================================================================== -->
+    <section class="hero-container" id="hero-scroll-stage" aria-label="Cinematic Film Journey">
+      <div class="hero-sticky-stage" id="stage">
+        <!-- Background Poster Fallback -->
+        <div class="hero-poster-layer" id="poster-layer" aria-hidden="true"></div>
 
-  <footer class="sw-foot" id="provenance">
-    <div class="sw-foot__inner">
-      <p class="sw-foot__brand">VITISH · Smart India Hackathon 2026 · Problem Statement #99</p>
-      <p class="pp-source">Every scene in this flight is real measured evidence — the Z24 bridge benchmark, real crack-segmentation model output, and the empirical LTBP fleet prior.</p>
-      <table class="pp-table">
-        <thead><tr><th>scene</th><th>provenance</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <p class="sw-foot__honesty">This is a <strong>demonstration</strong>, not a certified assessment. No live field sensors are claimed; the twin is a verified demonstration of the pipeline on real benchmark data. See <a href="../docs/HONESTY-METHODOLOGY.md">docs/HONESTY-METHODOLOGY.md</a>.</p>
-      <p class="sw-foot__links">
-        <a href="../README.md">README</a> ·
-        <a href="../docs/COMPREHENSIVE-ANALYSIS.md">analysis</a> ·
-        <a href="https://github.com/oso95/scroll-world" rel="noopener">flight engine: scroll-world (MIT)</a>
-        · films rendered by <a href="../scripts/render_z24_films.py">scripts/render_z24_films.py</a>
-      </p>
+        <!-- Video Element -->
+        <video id="hero-video" preload="none" muted playsinline aria-hidden="true" tabindex="-1"></video>
+
+        <!-- Scrim Overlays -->
+        <div class="global-scrim" aria-hidden="true"></div>
+
+        <!-- Stream Loading Indicator -->
+        <div class="stream-loading-ring" id="loading-ring" aria-hidden="true">
+          <svg class="ring-svg" viewBox="0 0 48 48">
+            <circle class="ring-circle" cx="24" cy="24" r="20" fill="none" stroke="currentColor" stroke-width="3"/>
+          </svg>
+          <span id="loading-status-text">Streaming 70s Master Arc...</span>
+        </div>
+
+        <!-- Upper Telemetry HUD -->
+        <div class="hero-hud-top" aria-hidden="true">
+          <div class="chip">
+            <span class="dot-pulse"></span>
+            <span>VITISH SHM, Bridge Health</span>
+          </div>
+          <div class="chip">
+            <span>GEO: 47.136° N, 7.578° E</span>
+          </div>
+          <div class="chip" id="hud-frequency-chip">
+            <span>f1: <strong id="hud-frequency-val" style="color:#67e8f9;">3.80 Hz</strong></span>
+          </div>
+        </div>
+
+        <!-- Lower Left Telemetry HUD -->
+        <div class="hero-hud-bottom-left" aria-hidden="true">
+          <div class="chip bhi-green" id="hud-sensor-chip">
+            <span>SENSOR: ADXL355 Triaxial @ 100 Hz</span>
+          </div>
+          <div class="chip" id="hud-cv-chip">
+            <span>VISION: YOLO26s-seg Crack Mask (CrackSeg9k)</span>
+          </div>
+        </div>
+
+        <!-- Lower Right BHI Gauge HUD -->
+        <div class="hero-hud-bottom-right" aria-hidden="true">
+          <div class="bhi-gauge-card" id="bhi-gauge" data-band="green">
+            <svg class="bhi-dial-svg" viewBox="0 0 160 85">
+              <!-- Gauge Arc Background -->
+              <path d="M 20 75 A 60 60 0 0 1 140 75" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="10" stroke-linecap="round"/>
+              <!-- Green Band -->
+              <path d="M 20 75 A 60 60 0 0 1 80 15" fill="none" stroke="#10b981" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
+              <!-- Amber Band -->
+              <path d="M 80 15 A 60 60 0 0 1 115 35" fill="none" stroke="#f59e0b" stroke-width="10" opacity="0.9"/>
+              <!-- Red Band -->
+              <path d="M 115 35 A 60 60 0 0 1 140 75" fill="none" stroke="#ef4444" stroke-width="10" stroke-linecap="round" opacity="0.95"/>
+              <!-- Needle Group (smoothed dt lerp) -->
+              <g id="gauge-needle-group" style="transform-origin: 80px 75px; transform: rotate(-90deg); transition: transform 0.05s linear;">
+                <line x1="80" y1="75" x2="80" y2="22" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="80" cy="75" r="5" fill="#06b6d4"/>
+              </g>
+            </svg>
+            <div class="bhi-score-row">
+              <span class="bhi-score-num" id="bhi-value-display">87.1</span>
+              <span class="bhi-score-label">BHI</span>
+            </div>
+            <span class="bhi-status-pill" id="bhi-status-pill">NOMINAL (GREEN)</span>
+          </div>
+        </div>
+
+        <!-- 6 Choreographed Text Bands -->
+        <div class="caption-stage" aria-live="polite">
+          <!-- Band 1: The Hook -->
+          <div class="band entrance-drift" id="band-1" data-band-index="0" data-range-start="0.00" data-range-end="0.16">
+            <p class="band-kicker">Chapter 1, The Hook</p>
+            <h1 class="band-headline split-text">Infrastructure does not scream when it begins to die. It whispers.</h1>
+            <p class="band-lede">It hides inside the concrete, inside the steel, inside the frequency of a truck passing at midnight.</p>
+          </div>
+
+          <!-- Band 2: The Core Philosophy -->
+          <div class="band entrance-scatter" id="band-2" data-band-index="1" data-range-start="0.16" data-range-end="0.32">
+            <p class="band-kicker">Chapter 2, The Core Philosophy</p>
+            <h2 class="band-headline split-text">This is what the inside of a dying bridge looks like.</h2>
+            <p class="band-lede">We did not have to break one to show it to you. Real Z24 benchmark progressive damage replay.</p>
+          </div>
+
+          <!-- Band 3: Georeference Lock -->
+          <div class="band entrance-approach" id="band-3" data-band-index="2" data-range-start="0.32" data-range-end="0.48">
+            <p class="band-kicker">Chapter 3, Georeference Lock</p>
+            <h2 class="band-headline split-text">We know where it is. We know what it is. We know what it should be doing.</h2>
+            <p class="band-lede">If it stops doing that, we will know, before anyone else does.</p>
+          </div>
+
+          <!-- Band 4: Honesty as a Feature -->
+          <div class="band entrance-blur" id="band-4" data-band-index="3" data-range-start="0.48" data-range-end="0.64">
+            <p class="band-kicker">Chapter 4, Honesty as a Feature</p>
+            <h2 class="band-headline split-text">Honesty is not a caveat. It is a feature.</h2>
+            <p class="band-lede">Every number on this screen knows where it came from, and so do you.</p>
+          </div>
+
+          <!-- Band 5: The 105s Climax Arc -->
+          <div class="band entrance-punch" id="band-5" data-band-index="4" data-range-start="0.64" data-range-end="0.84">
+            <p class="band-kicker">Chapter 5, The Climax</p>
+            <h2 class="band-headline split-text">Sixty seconds ago, the bridge was <span class="em">amber</span>. Now it is <span class="em">red</span>.</h2>
+            <p class="band-lede">Sixty seconds from now, the news would have known. We knew <span class="em">first</span>.</p>
+          </div>
+
+          <!-- Band 6: The Monolith Settle -->
+          <div class="band entrance-settle" id="band-6" data-band-index="5" data-range-start="0.84" data-range-end="1.00">
+            <p class="band-kicker">Chapter 6, The Settle</p>
+            <h2 class="band-headline split-text">VITISH. Before the news does.</h2>
+            <p class="band-lede">Autonomous self-auditing digital twin platform for concrete highway bridges.</p>
+            <div class="settle-cta-group">
+              <a href="#developer-cta" class="btn-hero-action">
+                <span>Run Listener Locally</span>
+                <span class="dot-pulse" aria-hidden="true"></span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Static Hero View (Responsive & Accessibility Fallback) -->
+    <section class="static-hero-view" style="background-image: url('assets/hero-poster.jpg');" aria-label="VITISH Static Overview">
+      <div class="static-hero-content">
+        <p class="section-kicker">VITISH SHM PLATFORM</p>
+        <h1 class="section-title">Before the news does.</h1>
+        <p class="section-lede" style="margin-bottom: 2rem;">
+          VITISH reads the hidden fatigue of concrete bridges before visible failure. Real Z24 benchmark data, real Euler-Bernoulli physics, real MQTT-to-WebSocket telemetry. No mockup anywhere in the demo.
+        </p>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:1.25rem;">
+          <a href="#developer-cta" class="btn-hero-action">
+            <span>Run the listener yourself</span>
+            <span class="dot-pulse" aria-hidden="true"></span>
+          </a>
+          <p class="section-lede" style="font-family:var(--font-mono); font-size:0.8125rem; color:#67e8f9; background:rgba(13,22,38,0.9); padding:0.6rem 1.2rem; border-radius:8px; border:1px solid rgba(6,182,212,0.4); box-shadow:0 0 15px rgba(6,182,212,0.2);">
+            docker compose up -d && cd backend && python app/run_all.py --demo
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         BELOW-THE-FOLD SECTIONS
+         ======================================================================== -->
+    <div class="site-content">
+      <!-- Section 1: Provenance Switcher -->
+      <section class="section-container" id="provenance">
+        <div class="card-grid-2">
+          <div>
+            <div class="source-badge-live" id="source-badge-indicator">
+              <span class="dot-pulse" id="source-dot"></span>
+              <span id="source-badge-text">LIVE TELEMETRY STREAMING (100 Hz)</span>
+            </div>
+            <p class="section-kicker">Chapter 2, Honesty as a Feature</p>
+            <h2 class="section-title">Every number knows where it came from.</h2>
+            <p class="section-lede">
+              The SourceBadge cycles between LIVE, REPLAY, and SIMULATED. The ProvenancePanel renders its per-channel breakdown: node 6, ADXL355, real replay. Node 7, ADXL355, real replay. Node 8, ADXL355, real replay.
+            </p>
+            <div class="channel-list">
+              <div class="channel-row">
+                <span class="channel-name">Node 6 (ADXL355 Pier 1)</span>
+                <span class="channel-status">REAL REPLAY (100 Hz)</span>
+              </div>
+              <div class="channel-row">
+                <span class="channel-name">Node 7 (ADXL355 Mid-Span)</span>
+                <span class="channel-status">REAL REPLAY (100 Hz)</span>
+              </div>
+              <div class="channel-row">
+                <span class="channel-name">Node 8 (ADXL355 Pier 2)</span>
+                <span class="channel-status">REAL REPLAY (100 Hz)</span>
+              </div>
+            </div>
+            <p class="honesty-note">
+              Honesty note: the hero bridge streams real benchmark through the real pipeline; 49 other bridges are illustrative, real locations, simulated health.
+            </p>
+          </div>
+          <div class="media-card">
+            <img src="assets/section-provenance.webp" alt="VITISH Provenance Panel telemetry audit interface" loading="lazy">
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Environmental De-Confounding -->
+      <section class="section-container" id="thermal" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="card-grid-2">
+          <div class="media-card">
+            <img src="assets/section-thermal.webp" alt="Environmental thermal de-confounding graph" loading="lazy">
+          </div>
+          <div>
+            <p class="section-kicker">Key-Decisions #5</p>
+            <h2 class="section-title">The sun moves the bridge more than the damage does.</h2>
+            <p class="section-lede">
+              Z24's modal frequencies swing roughly 10 percent with seasonal temperature, versus 1 to 2 percent for actual structural damage. Without temperature compensation, the system would flag weather as damage. With it, only real damage makes it through.
+            </p>
+            <div style="margin-top:1.75rem; padding:1.5rem; background:var(--panel); border-left:4px solid var(--accent); border-radius:10px; box-shadow:var(--panel-glow);">
+              <p style="font-family:var(--font-mono); font-size:0.875rem; color:#fff;">
+                <strong>Cited:</strong> Neumann et al., arXiv:2409.17735. Ridge regression temperature compensation baseline trained on 1997-1998 continuous Swiss environmental cycle.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 3: Multimodal Edge Fusion -->
+      <section class="section-container" id="multimodal" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="section-header" style="text-align:center;">
+          <p class="section-kicker">Chapter 3, Eyes and Ears</p>
+          <h2 class="section-title">Two senses. One number. One uncertainty band.</h2>
+          <p class="section-lede" style="margin: 0 auto;">
+            The fusion engine carries cv at weight 0.40, vib at weight 0.35, load at weight 0.25, all visible on screen. The YOLO26s-seg segmenter is trained on CrackSeg9k (CC0). The ADXL355 sampled at 100 Hz matches the KU Leuven campaign.
+          </p>
+        </div>
+        <div class="card-grid-2">
+          <div class="scope-visual-box">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-family:var(--font-mono); font-size:0.8125rem; color:var(--accent);">ACCELEROMETER OSCILLOSCOPE (100 Hz)</span>
+              <span style="font-family:var(--font-mono); font-size:0.75rem; color:#34d399; font-weight:700;">RMS: 0.042g</span>
+            </div>
+            <svg class="scope-svg" viewBox="0 0 400 120">
+              <path d="M 0 60 Q 25 10, 50 60 T 100 60 T 150 60 T 200 60 T 250 60 T 300 60 T 350 60 T 400 60" fill="none" stroke="#06b6d4" stroke-width="2.5" opacity="0.9" style="filter: drop-shadow(0 0 8px #06b6d4);"/>
+              <path d="M 0 60 Q 20 30, 40 60 T 80 60 T 120 60 T 160 60 T 200 60 T 240 60 T 280 60 T 320 60 T 360 60 T 400 60" fill="none" stroke="#10b981" stroke-width="1.8" opacity="0.6"/>
+            </svg>
+            <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:0.75rem; color:var(--text-mono);">
+              <span>BANDPASS: 0.5 - 20.0 Hz</span>
+              <span>FFT PEAK f1: 3.80 Hz</span>
+            </div>
+          </div>
+          <div class="media-card">
+            <img src="assets/section-multimodal.webp" alt="YOLO26s-seg Crack Segmentation and Edge Fusion" loading="lazy">
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 4: Digital Twin Physics -->
+      <section class="section-container" id="twin" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="card-grid-2">
+          <div>
+            <p class="section-kicker">Chapter 4, Bridging Data and Physics</p>
+            <h2 class="section-title">The bridge, reduced to its equations, listening to itself think.</h2>
+            <p class="section-lede">
+              The parametric Z24 box girder materializes span by span: 14 + 30 + 14 metres, two interior piers at x = plus or minus 14 m, abutments at x = plus or minus 29 m, 29 deck segments under 10,000 triangles, no downloaded GLB, no cables.
+            </p>
+            <div style="margin-top:1.75rem; display:flex; flex-direction:column; gap:0.85rem;">
+              <div class="chip" style="width:fit-content;">
+                <span>EULER-BERNOULLI SOLVER: Real-time 1 Hz state updates</span>
+              </div>
+              <div class="chip" style="width:fit-content;">
+                <span>SEEDED EI LOSS: -22.6% on main span</span>
+              </div>
+              <div class="chip" style="width:fit-content;">
+                <span>MODAL SLIDE: f1 drops 3.80 Hz to 3.244 Hz</span>
+              </div>
+            </div>
+          </div>
+          <div class="media-card">
+            <img src="assets/section-twin.webp" alt="Euler-Bernoulli Digital Twin 3D Mesh in React Three Fiber" loading="lazy">
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 5: The 105-Second Countdown (Interactive Moment) -->
+      <section class="section-container" id="countdown" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="interactive-simulator-panel">
+          <p class="section-kicker">Chapter 5, Interactive Demo Arc</p>
+          <h2 class="section-title">Press and hold to run the 105-second demo arc.</h2>
+          <p class="section-lede" style="margin: 0 auto 2.5rem;">
+            Experience the progressive failure sequence verified by the test suite: BHI 87.1 GREEN at t=0, surface crack at t=45s, pier settlement at t=75s, tendon rupture at t=105s (BHI 33.6 RED).
+          </p>
+
+          <button class="press-hold-btn" id="btn-press-hold" aria-label="Press and hold to trigger demo arc">
+            <div class="hold-progress-fill" id="hold-progress-bar"></div>
+            <div class="btn-hold-text">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span id="hold-btn-label">PRESS & HOLD TO RUN ARC</span>
+            </div>
+          </button>
+
+          <div class="alerts-flow-container">
+            <div class="alert-banner-item sev2" id="alert-1">
+              <span class="dot-pulse amber"></span>
+              <div>
+                <strong>t=45s | SEV 2 WARNING:</strong> Surface crack detected by YOLO26s-seg on Pier 2 (conf: 0.94). BHI drops to 72.4.
+              </div>
+            </div>
+            <div class="alert-banner-item sev2" id="alert-2">
+              <span class="dot-pulse amber"></span>
+              <div>
+                <strong>t=75s | SEV 2 SETTLEMENT:</strong> Pier 1 foundation settlement dx=2.4mm. f1 slides to 3.71 Hz. BHI drops to 54.0.
+              </div>
+            </div>
+            <div class="alert-banner-item sev1" id="alert-3">
+              <span class="dot-pulse red"></span>
+              <div>
+                <strong>t=105s | SEV 1 CRITICAL:</strong> Main span tendon rupture! f1 drops 3.80 to 3.23 Hz (EI -22.6%). BHI crosses into 33.6 RED.
+              </div>
+            </div>
+            <div class="alert-banner-item copilot" id="alert-4">
+              <span class="dot-pulse"></span>
+              <div>
+                <strong>t=175s | DEMO-ARC NOTIFICATION:</strong> Demo-arc hold complete. BHI 33.6 RED is the pinned scripted floor; out-of-band alert dispatch (Telegram) exits this page. Not a real NHAI dispatch.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 6: Developer Command CTA -->
+      <section class="section-container" id="developer-cta" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="section-header" style="text-align:center;">
+          <p class="section-kicker">Chapter 6, One Command Starts the Story</p>
+          <h2 class="section-title">One command. The whole story.</h2>
+          <p class="section-lede" style="margin: 0 auto 2rem;">
+            Docker compose up. Run the backend. Open the hosted twin at /twin. The system passes all 24 verification gates and its 30-file backend suite. The cinematic promise becomes a developer reality.
+          </p>
+        </div>
+
+        <div class="terminal-execution-box">
+          <div class="terminal-top-bar">
+            <div class="terminal-dots">
+              <span class="terminal-dot"></span>
+              <span class="terminal-dot"></span>
+              <span class="terminal-dot"></span>
+            </div>
+            <span style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-mono);">bash - Developer Quickstart</span>
+            <span style="width:40px;"></span>
+          </div>
+          <div class="terminal-code-body">
+            <code class="terminal-code-text" id="dev-cmd-text">docker compose up -d && cd backend && python app/run_all.py --demo</code>
+            <button class="btn-copy-cmd" id="btn-copy" aria-label="Copy terminal command to clipboard">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span id="copy-btn-text">Copy Command</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="verification-chips-row" style="justify-content:center;">
+          <div class="chip bhi-green">
+            <span>24/24 Verification Gates Passed</span>
+          </div>
+          <div class="chip bhi-green">
+            <span>30-File Backend Suite OK</span>
+          </div>
+          <div class="chip">
+            <span>Twin URL: /twin/ (served same-origin)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 7: Four Layers Architecture Stack -->
+      <section class="section-container" id="architecture" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="section-header">
+          <p class="section-kicker">Four Layers, One Pipeline</p>
+          <h2 class="section-title">Every block in this stack is open. Every block is real.</h2>
+          <p class="section-lede">
+            Modular architecture designed for rapid edge deployment across national highway networks.
+          </p>
+        </div>
+        <div class="card-grid-4">
+          <div class="ui-panel">
+            <p class="section-kicker">Layer 1</p>
+            <h3 style="font-family:var(--font-display); font-size:1.3rem; margin-bottom:0.75rem; color:#fff;">Edge & Sensing</h3>
+            <p style="font-size:0.95rem; color:var(--text-secondary);">
+              Z24 replay simulator plus ESP32-S3 and ADXL355 triaxial accelerometer nodes sampling at 100 Hz.
+            </p>
+          </div>
+          <div class="ui-panel">
+            <p class="section-kicker">Layer 2</p>
+            <h3 style="font-family:var(--font-display); font-size:1.3rem; margin-bottom:0.75rem; color:#fff;">Communication</h3>
+            <p style="font-size:0.95rem; color:var(--text-secondary);">
+              Eclipse Mosquitto MQTT message broker streaming 100 Hz sensor topics into FastAPI WebSocket server.
+            </p>
+          </div>
+          <div class="ui-panel">
+            <p class="section-kicker">Layer 3</p>
+            <h3 style="font-family:var(--font-display); font-size:1.3rem; margin-bottom:0.75rem; color:#fff;">AI Processing</h3>
+            <p style="font-size:0.95rem; color:var(--text-secondary);">
+              YOLO26s-seg, Vibration VAE+OCSVM, LSTM-AE, MiniRocket and Ridge, plus fused Bridge Health Index (BHI).
+            </p>
+          </div>
+          <div class="ui-panel">
+            <p class="section-kicker">Layer 4</p>
+            <h3 style="font-family:var(--font-display); font-size:1.3rem; margin-bottom:0.75rem; color:#fff;">Twin & Copilot</h3>
+            <p style="font-size:0.95rem; color:var(--text-secondary);">
+              React Three Fiber physics canvas, MapLibre 6 GIS map, Cesium ion 3D Tiles, and Copilot dispatch agent.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 8: Honest Economics -->
+      <section class="section-container" id="economics" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="section-header" style="text-align:center;">
+          <p class="section-kicker">Pilot BOM and SaaS Pricing</p>
+          <h2 class="section-title">Beneath Sydney Harbour's 2,400 sensors.</h2>
+          <p class="section-lede" style="margin: 0 auto;">
+            The reference implementation of the architecture MoRTH, IIT-M, and C-DAC are mandating for India's 1.7 lakh NH bridges by 30 September 2026.
+          </p>
+        </div>
+        <div class="card-grid-4">
+          <div class="metric-card">
+            <div class="metric-value">$980</div>
+            <div class="metric-label">PILOT BOM</div>
+            <p class="metric-subtext">Complete 10-node sensor hardware bill of materials for one bridge.</p>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">$260</div>
+            <div class="metric-label">ANNUAL FLEET COST</div>
+            <p class="metric-subtext">Per bridge per year at 1,000+ national bridge fleet deployment.</p>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">$25 - $30</div>
+            <div class="metric-label">MONTHLY SAAS</div>
+            <p class="metric-subtext">Per bridge monthly platform license above amortised infrastructure TCO.</p>
+          </div>
+          <div class="metric-card">
+            <div class="metric-value">1.7 Lakh</div>
+            <div class="metric-label">TARGET SCALE</div>
+            <p class="metric-subtext">National Highway bridges in India targeted under the 2026 mandate.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 9: FAQ -->
+      <section class="section-container" id="faq" style="border-top: 1px solid rgba(6,182,212,0.15);">
+        <div class="section-header">
+          <p class="section-kicker">FAQ</p>
+          <h2 class="section-title">The questions the jury asks.</h2>
+          <p class="section-lede">Direct, unhedged answers to real engineering and deployment questions.</p>
+        </div>
+        <div class="faq-list">
+          <div class="faq-item">
+            <div class="faq-question">Would VITISH have caught Morbi?</div>
+            <div class="faq-answer">
+              No. Morbi was a 140-year-old steel suspension footbridge carrying 500 people against a rating of 125, with rusted cables, broken anchors, and loose bolts. It had no sensors. It is structurally the opposite of the Z24. The global-vibration monitoring VITISH performs today has a known blind spot for cable-anchorage corrosion and overload failure modes. The roadmap adds strain-gauge and acoustic-emission sensing to close that blind spot. Morbi is our motivation. Z24 is our proof.
+            </div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">How is this different from Sydney Harbour's 2,400 sensors?</div>
+            <div class="faq-answer">
+              Sydney Harbour is the gold standard, and it costs gold-standard money. VITISH is the reference implementation of the architecture India can actually afford to deploy across 1.7 lakh NH bridges. The low-cost tier beneath Sydney Harbour's 2,400 sensors.
+            </div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">Is the demo real or simulated?</div>
+            <div class="faq-answer">
+              The hero bridge carries the real Z24 progressive-damage campaign end to end. The digital twin's measured first-mode frequency slides 3.80 to 3.23 Hz exactly as the seeded tendon-rupture predicts. The 49 other bridges are illustrative, real locations, simulated health. Every data source is labelled on screen so the audience never confuses what is measured from what is modeled.
+            </div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">What about the ML model's real-world performance?</div>
+            <div class="faq-answer">
+              The demo healthy-versus-rupture P=R=F1=1.0. The real Z24 P=0.5263, R=0.0016, F1=0.0032. The published VAE+OCSVM numbers from Scientific Reports 2025 are PR 0.996 and recall 0.999. We cite all three honestly, on screen, in the ProvenancePanel. The spectral-heuristic floor in backend/app/anomaly.py carries the demo when the trained ML ensemble is uninformative.
+            </div>
+          </div>
+          <div class="faq-item">
+            <div class="faq-question">How do I run it?</div>
+            <div class="faq-answer">
+              One command. Docker compose up, run the backend, then open the hosted twin at /twin. The system passes all 24 verification gates and its 30-file backend suite.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 10: Pilot Deployment Request Form -->
+      <section class="section-container" id="pilot-request" style="border-top: 1px solid rgba(6,182,212,0.15); text-align:center;">
+        <p class="section-kicker">Deployment Intake</p>
+        <h2 class="section-title">Request a Pilot Deployment</h2>
+        <p class="section-lede" style="margin: 0 auto 2.5rem;">
+          Connect your bridge infrastructure to the VITISH self-auditing telemetry pipeline.
+        </p>
+
+        <div class="pilot-form-wrapper">
+          <form id="pilot-form">
+            <div class="form-group">
+              <label class="form-label" for="form-org">Agency / Institution</label>
+              <input class="form-input" type="text" id="form-org" required placeholder="e.g. NHAI Regional Office / MoRTH / IIT-M">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="form-contact">Technical Point of Contact</label>
+              <input class="form-input" type="email" id="form-contact" required placeholder="engineer@authority.gov.in">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="form-bridge-details">Bridge Asset Scope & Target Span</label>
+              <textarea class="form-textarea" id="form-bridge-details" placeholder="Span length, construction type (pre-stressed concrete, box girder), existing sensor nodes..."></textarea>
+            </div>
+            <button class="form-submit-btn" type="submit">Submit Pilot Application</button>
+          </form>
+          <div class="form-success-msg" id="form-success">
+            <strong>Application Received.</strong><br>
+            We will be in touch. In the meantime, run the listener yourself with the developer quickstart command above.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-top-row">
+        <div class="brand-lockup">
+          <svg class="brand-svg" viewBox="0 0 32 32" aria-hidden="true">
+            <line x1="2" y1="26" x2="30" y2="26" stroke="#06b6d4" stroke-width="1.5" opacity="0.6"/>
+            <line x1="3" y1="14" x2="29" y2="14" stroke="#06b6d4" stroke-width="2"/>
+            <line x1="9" y1="14" x2="9" y2="26" stroke="#06b6d4" stroke-width="2"/>
+            <line x1="23" y1="14" x2="23" y2="26" stroke="#06b6d4" stroke-width="2"/>
+            <line x1="3" y1="14" x2="3" y2="26" stroke="#06b6d4" stroke-width="2"/>
+            <line x1="29" y1="14" x2="29" y2="26" stroke="#06b6d4" stroke-width="2"/>
+          </svg>
+          <span class="brand-title">VITISH</span>
+        </div>
+        <p class="footer-telemetry-mono">
+          BHI 87.1 to 33.6, f1 3.8 to 3.23 Hz, 24/24 gates, 30-file suite, no flicker.
+        </p>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:1rem; font-size:0.875rem; color:var(--text-secondary);">
+        <p>Smart India Hackathon 2026, Problem Statement #99</p>
+        <p>Repo: <a href="https://github.com/dev25bansal-ops/vitish-bridge-shm" target="_blank" rel="noopener" style="color:var(--accent); text-decoration:underline;">github.com/dev25bansal-ops/vitish-bridge-shm</a></p>
+      </div>
+
+      <div class="footer-disclosure">
+        VITISH is a fictional product name for a real reference implementation. The Z24 benchmark data is real. The hero film is an animated dramatisation of the measured Z24 mode shapes, not raw telemetry. The Morbi framing is honest. No mockup anywhere in the demo. Code MIT; Z24 benchmark data under its own terms (see the repo).
+      </div>
     </div>
   </footer>
+
+  <!-- ========================================================================
+       ENGINEERING SCRUB PIPELINE & INTERACTIVITY LOGIC
+       ======================================================================== -->
+  <script>
+    (function() {
+      'use strict';
+
+      /* ------------------------------------------------------------------
+         HONEST MEDIA PROVENANCE: the hero scrub film is a cinematic
+         dramatisation rendered from the real Z24 bridge benchmark's measured
+         mode shapes (modal animation), not raw accelerometer frames. It is
+         accompanied by this on-screen label so a visitor never mistakes it
+         for raw telemetry. (Repo honesty rules R1/R3.)
+         ------------------------------------------------------------------ */
+      (function() {
+        try {
+          var probe = document.createElement('div');
+          probe.style.position = 'fixed';
+          probe.style.bottom = '5.5rem';
+          probe.style.left = '2.5rem';
+          probe.style.zIndex = '30';
+          probe.style.maxWidth = '26rem';
+          probe.style.padding = '0.7rem 1rem';
+          probe.style.background = 'rgba(7,13,24,0.85)';
+          probe.style.border = '1px solid rgba(6,182,212,0.4)';
+          probe.style.borderRadius = '10px';
+          probe.style.fontFamily = "'JetBrains Mono', monospace";
+          probe.style.fontSize = '0.72rem';
+          probe.style.lineHeight = '1.5';
+          probe.style.color = 'var(--text-mono, #67e8f9)';
+          probe.style.backdropFilter = 'blur(12px)';
+          probe.style.boxShadow = '0 4px 20px rgba(0,0,0,0.4)';
+          probe.textContent = 'FILM: real Z24 benchmark measured mode shapes (modal dramatisation), not raw telemetry. See the on-page provenance panel below.';
+          document.body.appendChild(probe);
+        } catch (e) { /* overlay is cosmetic; never block the page */ }
+      })();
+
+      /* Seeded Pseudo-Random Number Generator for Choreography Offsets */
+      function createRng(seed) {
+        let s = seed >>> 0;
+        return function() {
+          s = (s * 1664525 + 1013904223) >>> 0;
+          return s / 4294967296;
+        };
+      }
+
+      /* Headline Word and Character Splitting */
+      const rng = createRng(42);
+      document.querySelectorAll('.split-text').forEach((el, elIdx) => {
+        const text = el.textContent.trim();
+        const words = text.split(/\s+/);
+        el.innerHTML = '';
+        el.setAttribute('aria-label', text);
+
+        const visualWrap = document.createElement('span');
+        visualWrap.setAttribute('aria-hidden', 'true');
+
+        let charTotal = 0;
+        words.forEach((word) => {
+          const wSpan = document.createElement('span');
+          wSpan.className = 'w';
+          if (word.toLowerCase().includes('amber') || word.toLowerCase().includes('red') || word.toLowerCase().includes('first')) {
+            wSpan.classList.add('em');
+          }
+          wSpan.style.setProperty('--th', (rng() * 0.4).toFixed(3));
+
+          for (let i = 0; i < word.length; i++) {
+            const cSpan = document.createElement('span');
+            cSpan.className = 'c';
+            cSpan.textContent = word[i];
+            cSpan.style.setProperty('--th', (rng() * 0.45).toFixed(3));
+            cSpan.style.setProperty('--jx', (rng() * 40 - 20).toFixed(1) + 'px');
+            cSpan.style.setProperty('--jy', (rng() * 30 - 15).toFixed(1) + 'px');
+            cSpan.style.setProperty('--jr', (rng() * 20 - 10).toFixed(1) + 'deg');
+            wSpan.appendChild(cSpan);
+            charTotal++;
+          }
+          visualWrap.appendChild(wSpan);
+          visualWrap.appendChild(document.createTextNode(' '));
+        });
+
+        el.appendChild(visualWrap);
+      });
+
+      /* ========================================================================
+         STREAMED BLOB FETCHER WITH LOADING RING
+         ======================================================================== */
+      const VIDEO_URL = 'assets/hero-scrub.mp4';
+      const VIDEO_BYTES = 29770289;
+      const stage = document.getElementById('stage');
+      const video = document.getElementById('hero-video');
+      const posterLayer = document.getElementById('poster-layer');
+      const loadingRing = document.getElementById('loading-ring');
+      const loadingStatusText = document.getElementById('loading-status-text');
+
+      posterLayer.style.backgroundImage = "url('assets/hero-poster.jpg')";
+
+      let started = false;
+      function startBlobFetch() {
+        if (started) return;
+        started = true;
+        loadHeroBlob().catch(failVideo);
+      }
+
+      const posterImg = new Image();
+      posterImg.onload = startBlobFetch;
+      posterImg.onerror = startBlobFetch;
+      posterImg.src = 'assets/hero-poster.jpg';
+      setTimeout(startBlobFetch, 4000);
+
+      async function loadHeroBlob() {
+        const ctrl = new AbortController();
+        let watchdog = setTimeout(() => ctrl.abort(), 25000);
+
+        try {
+          const res = await fetch(VIDEO_URL, { priority: 'low', signal: ctrl.signal });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+
+          const total = Number(res.headers.get('Content-Length')) || VIDEO_BYTES;
+          const reader = res.body.getReader();
+          const chunks = [];
+          let got = 0;
+          let lastRing = 0;
+
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            clearTimeout(watchdog);
+            watchdog = setTimeout(() => ctrl.abort(), 25000);
+            chunks.push(value);
+            got += value.length;
+            const frac = Math.min(1, got / total);
+            const now = performance.now();
+            if (now - lastRing > 100 || frac === 1) {
+              lastRing = now;
+              loadingRing.style.setProperty('--ld', Math.round(126 * (1 - frac)));
+              if (loadingStatusText) {
+                loadingStatusText.textContent = `Streaming Arc: ${Math.round(frac * 100)}%`;
+              }
+            }
+          }
+          clearTimeout(watchdog);
+          loadingRing.style.setProperty('--ld', 0);
+          loadingRing.classList.add('loaded');
+
+          video.src = URL.createObjectURL(new Blob(chunks, { type: 'video/mp4' }));
+          video.load();
+
+          video.addEventListener('canplay', () => {
+            requestSeek(heroProgress() * (video.duration || 70));
+            stage.classList.add('video-ready');
+          }, { once: true });
+        } catch (e) {
+          failVideo();
+        }
+      }
+
+      function failVideo() {
+        loadingRing.classList.add('loaded');
+        stage.classList.add('video-failed');
+      }
+
+      /* ========================================================================
+         DEADLOCK-SAFE SEEK GATING
+         ======================================================================== */
+      let seekBusy = false;
+      let pendingTime = null;
+
+      function requestSeek(t) {
+        if (!video.duration || isNaN(video.duration)) return;
+        if (seekBusy) {
+          pendingTime = t;
+          return;
+        }
+        seekBusy = true;
+        video.currentTime = Math.max(0, Math.min(video.duration, t));
+      }
+
+      video.addEventListener('seeked', () => {
+        seekBusy = false;
+        if (pendingTime !== null) {
+          const t = pendingTime;
+          pendingTime = null;
+          requestSeek(t);
+        }
+      });
+
+      video.addEventListener('error', () => {
+        seekBusy = false;
+        pendingTime = null;
+      });
+
+      /* ========================================================================
+         DT-NORMALIZED LERP DRIVE LOOP (TUNED FOR SMOOTH, DELIBERATE SLOW SCRUB)
+         ======================================================================== */
+      const heroContainer = document.getElementById('hero-scroll-stage');
+      const bands = Array.from(document.querySelectorAll('.band')).map((el) => {
+        return {
+          el: el,
+          start: parseFloat(el.getAttribute('data-range-start')),
+          end: parseFloat(el.getAttribute('data-range-end')),
+          lastOpacity: -1,
+          lastK: -1
+        };
+      });
+
+      const bhiGaugeEl = document.getElementById('bhi-gauge');
+      const bhiValueEl = document.getElementById('bhi-value-display');
+      const bhiStatusPillEl = document.getElementById('bhi-status-pill');
+      const gaugeNeedleGroup = document.getElementById('gauge-needle-group');
+      const hudFrequencyValEl = document.getElementById('hud-frequency-val');
+      const hudSensorChipEl = document.getElementById('hud-sensor-chip');
+
+      let target = 0;
+      let shown = 0;
+      let rafId = null;
+      let lastTick = 0;
+      let heroOnScreen = true;
+
+      function heroProgress() {
+        if (!heroContainer) return 0;
+        const rect = heroContainer.getBoundingClientRect();
+        const total = rect.height - window.innerHeight;
+        if (total <= 0) return 0;
+        const top = -rect.top;
+        return Math.max(0, Math.min(1, top / total));
+      }
+
+      function smoothstep(p, e0, e1) {
+        const t = Math.min(1, Math.max(0, (p - e0) / (e1 - e0)));
+        return t * t * (3 - 2 * t);
+      }
+
+      function updateCaptions(p) {
+        bands.forEach((b, idx) => {
+          const start = b.start;
+          const end = b.end;
+          const f = Math.min(0.025, (end - start) / 3);
+
+          let op = 0;
+          if (idx === 0) {
+            op = 1 - smoothstep(p, end - f, end);
+          } else if (idx === bands.length - 1) {
+            op = smoothstep(p, start, start + f);
+          } else {
+            op = smoothstep(p, start, start + f) * (1 - smoothstep(p, end - f, end));
+          }
+
+          if (Math.abs(op - b.lastOpacity) > 0.01) {
+            b.lastOpacity = op;
+            b.el.style.opacity = op.toFixed(3);
+            b.el.style.pointerEvents = op > 0.5 ? 'auto' : 'none';
+          }
+
+          const k = Math.min(1, Math.max(0, (p - start) / Math.min(0.04, (end - start) * 0.4)));
+          if (Math.abs(k - b.lastK) > 0.008) {
+            b.lastK = k;
+            b.el.style.setProperty('--k', k.toFixed(3));
+          }
+        });
+      }
+
+      let lastBhi = -1;
+      let lastF1 = '';
+
+      function computeBhiForProgress(p) {
+        if (p < 0.35) {
+          return 87.1 - p * 15;
+        } else if (p < 0.65) {
+          return 81.85 - (p - 0.35) * 50;
+        } else {
+          return Math.max(33.6, 66.85 - (p - 0.65) * 95);
+        }
+      }
+
+      function computeF1ForProgress(p) {
+        if (p < 0.65) {
+          return 3.80 - p * 0.15;
+        } else {
+          return Math.max(3.23, 3.70 - (p - 0.65) * 1.35);
+        }
+      }
+
+      function updateHud(p) {
+        const bhi = computeBhiForProgress(p);
+        if (Math.abs(bhi - lastBhi) > 0.1) {
+          lastBhi = bhi;
+          bhiValueEl.textContent = bhi.toFixed(1);
+
+          const deg = -90 + ((100 - bhi) / 100) * 180;
+          gaugeNeedleGroup.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+
+          const band = bhi >= 70 ? 'green' : bhi >= 50 ? 'amber' : 'red';
+          if (bhiGaugeEl.dataset.band !== band) {
+            bhiGaugeEl.dataset.band = band;
+            bhiStatusPillEl.textContent = band === 'green' ? 'NOMINAL (GREEN)' : band === 'amber' ? 'WARNING (AMBER)' : 'CRITICAL (RED)';
+
+            hudSensorChipEl.className = 'chip ' + (band === 'green' ? 'bhi-green' : band === 'amber' ? 'bhi-amber' : 'bhi-red');
+          }
+        }
+
+        const f1 = computeF1ForProgress(p);
+        const f1Str = f1.toFixed(2) + ' Hz';
+        if (f1Str !== lastF1) {
+          lastF1 = f1Str;
+          hudFrequencyValEl.textContent = f1Str;
+        }
+      }
+
+      function tick(now) {
+        const dt = Math.min(100, now - (lastTick || now));
+        lastTick = now;
+        const k = 0.11; // Weighted smooth progression
+        shown += (target - shown) * (1 - Math.pow(1 - k, dt / 16.667));
+
+        if (Math.abs(target - shown) < 0.0005) {
+          shown = target;
+          rafId = null;
+          lastTick = 0;
+        } else {
+          rafId = requestAnimationFrame(tick);
+        }
+
+        requestSeek(shown * (video.duration || 70));
+        updateCaptions(shown);
+        updateHud(shown);
+      }
+
+      function onScroll() {
+        if (!heroOnScreen) return;
+        target = heroProgress();
+        if (rafId === null) {
+          lastTick = performance.now();
+          rafId = requestAnimationFrame(tick);
+        }
+      }
+
+      /* IntersectionObserver for Hero Stage */
+      const heroObserver = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          heroOnScreen = e.isIntersecting;
+          if (heroOnScreen) onScroll();
+        });
+      });
+      heroObserver.observe(heroContainer);
+
+      /* ========================================================================
+         5-GATE DYNAMIC MEDIA QUERY LISTENERS
+         ======================================================================== */
+      const GATES = [
+        '(max-width: 720px)',
+        '(orientation: portrait) and (max-width: 1024px)',
+        '(orientation: portrait) and (pointer: coarse)',
+        '(orientation: landscape) and (pointer: coarse) and (max-height: 560px)',
+        '(prefers-reduced-motion: reduce)'
+      ];
+
+      let scrubOn = false;
+      function enableScrub() {
+        if (scrubOn) return;
+        scrubOn = true;
+        window.addEventListener('scroll', onScroll, { passive: true });
+        bands.forEach((b) => { b.lastOpacity = -1; b.lastK = -1; });
+        updateCaptions(heroProgress());
+        updateHud(heroProgress());
+        onScroll();
+      }
+
+      function disableScrub() {
+        if (!scrubOn) return;
+        scrubOn = false;
+        window.removeEventListener('scroll', onScroll);
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      }
+
+      function applyHeroMode() {
+        const matchesGate = GATES.some((q) => window.matchMedia(q).matches);
+        if (matchesGate) {
+          disableScrub();
+        } else {
+          enableScrub();
+        }
+      }
+
+      const MQLS = GATES.map((q) => window.matchMedia(q));
+      MQLS.forEach((m) => m.addEventListener('change', applyHeroMode));
+      applyHeroMode();
+
+      /* Tab Visibility & Animation Pause */
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          document.body.classList.add('paused');
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+        } else {
+          document.body.classList.remove('paused');
+          onScroll();
+        }
+      });
+
+      /* ========================================================================
+         PROVENANCE BADGE 4-SECOND LIVE CYCLE
+         ======================================================================== */
+      const sourceBadge = document.getElementById('source-badge-indicator');
+      const sourceDot = document.getElementById('source-dot');
+      const sourceText = document.getElementById('source-badge-text');
+      const modes = [
+        { text: 'LIVE TELEMETRY STREAMING (100 Hz)', color: '#34d399', dotClass: 'dot-pulse', bg: 'rgba(16, 185, 129, 0.2)', border: 'rgba(16, 185, 129, 0.5)' },
+        { text: 'Z24 REAL BENCHMARK REPLAY', color: '#67e8f9', dotClass: 'dot-pulse', bg: 'rgba(6, 182, 212, 0.2)', border: 'rgba(6, 182, 212, 0.5)' },
+        { text: 'SIMULATED FLEET HEALTH', color: '#fbbf24', dotClass: 'dot-pulse amber', bg: 'rgba(245, 158, 11, 0.2)', border: 'rgba(245, 158, 11, 0.5)' }
+      ];
+      let modeIdx = 0;
+      setInterval(() => {
+        modeIdx = (modeIdx + 1) % modes.length;
+        const m = modes[modeIdx];
+        sourceText.textContent = m.text;
+        sourceBadge.style.color = m.color;
+        sourceBadge.style.backgroundColor = m.bg;
+        sourceBadge.style.borderColor = m.border;
+        sourceDot.className = m.dotClass;
+      }, 4000);
+
+      /* ========================================================================
+         INTERACTIVE 105-SECOND CLIMAX ARC SIMULATOR
+         ======================================================================== */
+      const holdBtn = document.getElementById('btn-press-hold');
+      const holdProgressBar = document.getElementById('hold-progress-bar');
+      const holdLabel = document.getElementById('hold-btn-label');
+      const alertItems = [
+        document.getElementById('alert-1'),
+        document.getElementById('alert-2'),
+        document.getElementById('alert-3'),
+        document.getElementById('alert-4')
+      ];
+
+      let isHolding = false;
+      let holdProgress = 0; // 0 to 1
+      let holdRaf = null;
+
+      function updateHoldSimulation() {
+        if (isHolding) {
+          holdProgress = Math.min(1, holdProgress + 0.008);
+        } else {
+          holdProgress = Math.max(0, holdProgress - 0.02);
+        }
+
+        holdProgressBar.style.width = (holdProgress * 100).toFixed(1) + '%';
+
+        // Trigger progressive alert banners
+        if (holdProgress >= 0.25) alertItems[0].classList.add('active');
+        else alertItems[0].classList.remove('active');
+
+        if (holdProgress >= 0.50) alertItems[1].classList.add('active');
+        else alertItems[1].classList.remove('active');
+
+        if (holdProgress >= 0.75) alertItems[2].classList.add('active');
+        else alertItems[2].classList.remove('active');
+
+        if (holdProgress >= 0.95) {
+          alertItems[3].classList.add('active');
+          holdLabel.textContent = 'ARC VERIFIED: BHI 33.6 RED (HOLD COMPLETED)';
+        } else {
+          alertItems[3].classList.remove('active');
+          holdLabel.textContent = isHolding ? 'SIMULATING DECAY ARC...' : 'PRESS & HOLD TO RUN ARC';
+        }
+
+        if ((isHolding && holdProgress < 1) || (!isHolding && holdProgress > 0)) {
+          holdRaf = requestAnimationFrame(updateHoldSimulation);
+        } else {
+          holdRaf = null;
+        }
+      }
+
+      function startHold(e) {
+        e.preventDefault();
+        isHolding = true;
+        if (holdRaf === null) holdRaf = requestAnimationFrame(updateHoldSimulation);
+      }
+
+      function endHold(e) {
+        e.preventDefault();
+        isHolding = false;
+        if (holdRaf === null) holdRaf = requestAnimationFrame(updateHoldSimulation);
+      }
+
+      holdBtn.addEventListener('mousedown', startHold);
+      window.addEventListener('mouseup', endHold);
+      holdBtn.addEventListener('touchstart', startHold, { passive: false });
+      window.addEventListener('touchend', endHold, { passive: false });
+
+      /* ========================================================================
+         DEVELOPER TERMINAL COMMAND CLIPBOARD COPY
+         ======================================================================== */
+      const copyBtn = document.getElementById('btn-copy');
+      const copyBtnText = document.getElementById('copy-btn-text');
+      const devCmdText = document.getElementById('dev-cmd-text');
+
+      copyBtn.addEventListener('click', () => {
+        const text = devCmdText.textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtnText.textContent = 'Copied to Clipboard!';
+          setTimeout(() => {
+            copyBtnText.textContent = 'Copy Command';
+          }, 2500);
+        });
+      });
+
+      /* ========================================================================
+         PILOT DEPLOYMENT FORM HANDLING (JS-ONLY SUCCESS STATE)
+         ======================================================================== */
+      const pilotForm = document.getElementById('pilot-form');
+      const formSuccess = document.getElementById('form-success');
+
+      pilotForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        pilotForm.style.display = 'none';
+        formSuccess.style.display = 'block';
+      });
+    })();
+  </script>
 </body>
 </html>

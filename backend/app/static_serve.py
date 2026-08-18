@@ -4,7 +4,7 @@ VITISH 2026 · PS#99 SHM — static mounts for the public demo (item 20).
 The backend can serve two static sites directly, so a single ``python
 backend/app/run_all.py`` process is the whole public demo:
 
-    /        -> landing/           (scroll-world fly-through, item 20)
+    /        -> landing/           (cinematic scroll-driven landing, item 20)
     /twin    -> twin/dist/         (the digital-twin SPA, built by `npm run build`)
 
 Both mounts are opt-in no-ops when their directory (or the built SPA) is
@@ -21,8 +21,10 @@ Sec-notes (applies to a hosted deployment):
     ``VITISH_API_HOST`` says otherwise, WS origin checks still apply, and the
     state-changing demo route still needs ``VITISH_DEMO_TOKEN``.  The static
     mounts only add read-only GET content.
-  * The landing's provenance panel reads ``landing/assets/manifest.json`` —
-    a static asset, served verbatim (the renderer owns its honesty labels).
+  * The landing's hero film is honestly labelled in the page itself (fixed
+    provenance pill + footer: animated dramatisation of the measured Z24 mode
+    shapes, not raw telemetry) — a static asset, served verbatim (the page
+    owns its honesty labels).
 """
 from __future__ import annotations
 
