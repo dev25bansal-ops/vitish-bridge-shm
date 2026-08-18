@@ -23,8 +23,11 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-Z24 = ROOT / "data" / "z24" / "inputs.npy"
+# Resolve the repo root whether this runs from scripts/ or from this package.
+# (paths[2] = D:\SHM_Bridges when invoked from pipelines/z24-mirror/)
+_path = Path(__file__).resolve()
+REPO_ROOT = _path.parents[2] if (_path.name == "make_z24_fixture.py" and _path.parent.name == "z24-mirror") else _path.parents[1]
+Z24 = REPO_ROOT / "data" / "z24" / "inputs.npy"
 Z24_LABELS = Z24.with_name("labels.npy")
 FIXTURE_DIR = Z24.parent / "fixture"
 W = 1024
