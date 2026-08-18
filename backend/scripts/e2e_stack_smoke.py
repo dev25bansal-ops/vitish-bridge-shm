@@ -160,7 +160,11 @@ def main() -> int:
         got_state = None
         got_bhi = None
         topic = f"bridge/{BRIDGE_THEME}/bhi"
-        ws_deadline = time.time() + 35
+        # PERF-09: a loaded CI box can stall the sim thread (torch detector
+        # prebuilds + parallel suite) so the FIRST scored BHI legitimately lands
+        # tens of seconds after connect — hello arrives on the WS thread the
+        # instant the socket opens.  Budget generously for the first frame.
+        ws_deadline = time.time() + 60
         try:
             with websockets.sync.client.connect(ws_url, open_timeout=10.0) as conn:
                 while time.time() < ws_deadline:

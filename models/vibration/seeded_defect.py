@@ -38,6 +38,7 @@ Honesty notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -117,6 +118,34 @@ S101_SEQUENCE: List[str] = ["girder_saw_cut"]
 # Staging thresholds: alpha 0..1 -> each Z24 defect reaches full severity in
 # order (settlement in [0,.33], +cracking in [.33,.67], +tendon in [.67,1]).
 _STAGE = (1.0 / 3.0, 2.0 / 3.0)
+
+
+# PERF-04: the simulator re-evaluates the seeded-defect FEM every tick —
+# _f1_now() (per current_window call, 3 nodes) AND seeded_state() (per tick)
+# both call progress_from_alpha + f1_of_progress, each a full ~2ms FEM solve.
+# That is ~4 FEM solves/tick even though the storyboard alpha changes smoothly
+# (once per second at most).  A tiny alpha-keyed LRU serves repeat ticks from a
+# cheap dict lookup; the demo's alpha is monotone, so the live working set is a
+# handful of entries and the bounded cache stays a few KB.  Determinism is
+# preserved: the memoised result is the exact FEM output for that alpha — the
+# FEM itself is a pure function, so cache hit == recompute.  Frozen dict keys
+# only (progress dicts are rebuilt per call and never mutated by callers).
+@lru_cache(maxsize=256)
+def _describe_cached(alpha: float, f1_base: float) -> Dict[str, float]:
+    """Cached seeded-state narrative for one alpha. Pure: the FEM is a pure
+    function of the defect progress, so this equals describe(progress)."""
+    return describe(progress_from_alpha(alpha), f1_base=f1_base)
+
+
+@lru_cache(maxsize=256)
+def f1_from_alpha(alpha: float) -> float:
+    """Cached FEM first-mode frequency for one storyboard alpha (PERF-04).
+
+    The modal-resonance player asks for f1 once per emitted window (3 nodes →
+    3 lookups/tick); each hit avoids a full FEM solve.  Bounded, deterministic,
+    pure — identical to ``f1_of_progress(progress_from_alpha(alpha))``.
+    """
+    return f1_of_progress(progress_from_alpha(alpha))
 
 
 def progress_from_alpha(alpha: float) -> Dict[str, float]:

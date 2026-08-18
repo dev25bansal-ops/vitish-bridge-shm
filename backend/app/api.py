@@ -34,7 +34,7 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Tuple
 
 # launch bootstrap (works from repo root or backend/)
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
@@ -124,14 +124,27 @@ def create_app() -> FastAPI:
     def _store():
         return get_store(settings)
 
+    # PERF-08: the broker probe is a blocking TCP connect (timeout=0.4) and
+    # /health is polled frequently.  Cache the result for a short TTL so steady-
+    # state health checks don't pay a connect() every request; a broker arriving
+    # or leaving is reflected within ~_BROKER_PROBE_TTL seconds.
+    _broker_cache: Optional[Tuple[bool, float]] = None
+    _BROKER_PROBE_TTL = 5.0
+
     def _broker_reachable() -> bool:
+        nonlocal _broker_cache
+        now = time.time()
+        if _broker_cache is not None and now - _broker_cache[1] < _BROKER_PROBE_TTL:
+            return _broker_cache[0]
         try:
             with socket.create_connection(
                 (settings.broker_host, settings.broker_port), timeout=0.4
             ):
-                return True
+                ok = True
         except OSError:
-            return False
+            ok = False
+        _broker_cache = (ok, now)
+        return ok
 
     def _live_hero_state() -> dict:
         """Hero state with a DEFAULT_HERO fallback for every field (ROADMAP

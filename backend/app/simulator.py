@@ -346,8 +346,11 @@ class DamageInjector:
         inj = self
 
         def _f1_now() -> float:
-            p = inj._sd.progress_from_alpha(inj.alpha)
-            return inj._sd.f1_of_progress(p)
+            # PERF-04: cached FEM f1 for this alpha (pure) — the resonance
+            # player calls this once per emitted window (3 nodes/tick); the
+            # alpha-keyed LRU makes repeated ticks a dict lookup, not a FEM
+            # solve.
+            return inj._sd.f1_from_alpha(inj.alpha)
 
         prov = getattr(self.rupture, "f1_provider", None)
         if callable(prov):
@@ -378,9 +381,15 @@ class DamageInjector:
         return float(np.clip(1.0 - frac, 0.0, 1.0))
 
     def seeded_state(self) -> dict:
-        """Current D2-12 seeded-defect narrative (progress, f1, EI loss, source)."""
-        p = self._sd.progress_from_alpha(self.alpha)
-        return self._sd.describe(p, f1_base=self._sd.overview()["f1_ref"])
+        """Current D2-12 seeded-defect narrative (progress, f1, EI loss, source).
+
+        PERF-04: served from the alpha-keyed LRU (the FEM is a pure function of
+        alpha) so the per-tick control/status publish reuses the same solved f1
+        the resonance player already computed instead of re-solving the FEM.
+        The healthy FE reference is the module constant F1_REF (== the FEM's
+        calibrated healthy f1, what describe() reports for progress={}).
+        """
+        return self._sd._describe_cached(self.alpha, float(self._sd.physics.F1_REF))
 
     def current_window(self, node: int) -> np.ndarray:
         self.alpha = self._alpha_now()
@@ -514,8 +523,15 @@ class Simulator:
 
     # -- run loop -----------------------------------------------------------------
     def run(self) -> None:
-        if self.publisher is not None and not self.publisher.wait_connected(timeout=3.0):
-            log.warning("MQTT broker not reachable — streaming over the event bus only")
+        # PERF-09: do NOT block the first tick on a broker probe.  The old
+        # ``wait_connected(timeout=3.0)`` here delayed the very first accel/BHI
+        # by a guaranteed 3s (and far more under CPU load, where the sim thread
+        # could be starved by the torch detector prebuilds) even though emit()
+        # already falls back to the event bus the moment the broker is
+        # unreachable.  The warning is informational; the fallback adapts at
+        # publish time when the broker comes up mid-run.
+        if self.publisher is not None and not self.publisher.connected.is_set():
+            log.warning("MQTT broker not reachable — streaming over the event bus")
         tick = 0
         seg = 0
         while not self._stop.is_set():

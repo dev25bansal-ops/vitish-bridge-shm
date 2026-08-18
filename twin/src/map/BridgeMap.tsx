@@ -238,8 +238,20 @@ export const BridgeMap = memo(function BridgeMap() {
       }
     })
 
-    const unsub = useStore.subscribe((state) => {
+    const unsub = useStore.subscribe((state, prev) => {
       if (!sourceAdded || !map) return
+      // PERF-05: rebuild GeoJSON ONLY when the map-relevant data actually
+      // changed.  BHI/state tick ~1/s (mode: 'live'), but the store also
+      // mutates on unrelated updates (telemetry timestamp, alerts, selection)
+      // — every such mutation used to trigger a full buildGeoJSON + setData.
+      // buildGeoJSON is O(fleet) and setData re-rasterizes the layer; gating on
+      // the exact fields the map renders keeps steady-state re-rasterization
+      // to the BHI cadence instead of every store write.  A deep signal-diff is
+      // cheap (50 bridges) against the re-render cost it avoids.
+      const g = (v: typeof state) => v.bridges.map((b) => `${b.id}:${b.state}:${b.bhi}`).join('|')
+      const s = `${state.live.state}:${state.live.bhi}`
+      const p = prev?.live ? `${prev.live.state}:${prev.live.bhi}` : ''
+      if (g(state) === (prev ? g(prev) : '') && s === p) return
       const src = map.getSource('bridges') as GeoJSONSource | undefined
       if (src) src.setData(buildGeoJSON(state) as never)
     })

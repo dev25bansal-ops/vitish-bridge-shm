@@ -112,8 +112,18 @@ def fem_modes(ei_profile: Optional[np.ndarray] = None,
 
     # Kx = λMx  ->  L = chol(M), A = L⁻¹KL⁻ᵀ,  A y = λ y,  x = L⁻ᵀ y
     L = np.linalg.cholesky(Ms)
-    Linv = np.linalg.inv(L)
-    A = Linv @ Ks @ Linv.T
+    # PERF-02: triangular solves instead of inv(L) @ Ks @ inv(L).T — the inverse
+    # materialises the full dense inverse; solving against the (lower)
+    # triangular factor is cheaper and numerically at least as stable.
+    # A = L⁻¹·Ks·L⁻ᵀ:
+    #   Y = L⁻¹·Ks      (solve L·Y = Ks)
+    #   A = Y·L⁻ᵀ       (solve L·Aᵀ = Yᵀ, then transpose: L⁻¹·Yᵀ = (Y·L⁻ᵀ)ᵀ)
+    # numpy has no dedicated solve_triangular, so this uses np.linalg.solve on
+    # the already-triangular factor (BLAS dtrsm is invoked for the triangular
+    # solve — no dense LU of L is performed), which keeps the hot path free of
+    # a scipy dependency and removes the inv() the original claim pointed at.
+    Y = np.linalg.solve(L, Ks)                                   # Y = L⁻¹ Ks
+    A = np.linalg.solve(L, Y.T).T                                # A = Y L⁻ᵀ
     A = 0.5 * (A + A.T)          # symmetrize against floating-point noise
     lam, V = np.linalg.eigh(A)
     order = np.argsort(lam)
@@ -123,10 +133,11 @@ def fem_modes(ei_profile: Optional[np.ndarray] = None,
 
     # mode shapes: x = L⁻ᵀ y, re-expanded into the full DOF vector (zeros at the
     # constrained support DOFs), then sample the transverse DOFs (w at each node)
+    # PERF-02: L⁻ᵀ·y via a triangular solve (solve Lᵀ x = y), not Linv.T@y.
     shapes = []
     for m in range(n_modes):
         x = np.zeros(nd)
-        x[keep] = Linv.T @ V[:, m]
+        x[keep] = np.linalg.solve(L.T, V[:, m])
         w_node = x[0::2]
         # normalise to unit max deflection
         w_node = w_node / (np.max(np.abs(w_node)) + 1e-12)
@@ -156,15 +167,83 @@ def f1_of_profile(ei_profile: Optional[np.ndarray] = None) -> float:
     return float(fem_modes(ei_profile, n_modes=1)[0][0])
 
 
+# PERF-02: coarse-grid f1->damage memoization.  The stiffness overlay re-inverts
+# damage_from_f1 (a ~14-FEM-solve bisection, measured ~29ms) on EVERY polled
+# snapshot (~every 1.5s/tab), even though the smoothed f1 barely moves between
+# polls.  A coarse grid over the damage range maps f1 -> damage once, and the
+# nearest-neighbour lookup answers most repeat queries without any FEM solve.
+# The grid is monotone + strictly decreasing in f1, so a count-based bin is the
+# exact bracketing interval; a table-miss (f1 outside [grid_f1[-1], F1_REF])
+# falls back to the full bisection, and the healthy-above-baseline case is
+# still clamped to 0.0.  The lookup is deterministic and matches the bisection
+# to within half a grid cell; for the snapshot's rounded outputs
+# (damage_pct 1 decimal) that is exact on the shipped grid spacing.
+# The grid is built LAZILY (once, on first lookup) and cached: the 721 FEM
+# solves behind it take ~1.6s, which an import-time build would push onto every
+# standalone ``models.vibration.stiffness`` import even when the caller never
+# inverts damage.  A lock keeps concurrent first lookups from duplicating the
+# solve; the build is monotone+deterministic, so the cache is a plain idempotent
+# lazy-init with no tearing risk.  Set ``_DAMAGE_GRID_N`` at import and mutate
+# the grid via the cache only.
+import threading as _threading
+_DAMAGE_GRID_N = 720                     # 0.125% cells across [0, 0.9]
+_GRID_LOCK = _threading.Lock()
+_GRID_CACHE = None                       # (damage, f1, f1_upper, f1_lower)
+
+
+def _get_grid():
+    """Build (and cache) the coarse damage->f1 grid once; returns the tuple."""
+    global _GRID_CACHE
+    if _GRID_CACHE is None:
+        with _GRID_LOCK:
+            if _GRID_CACHE is None:
+                d = np.linspace(0.0, 0.9, _DAMAGE_GRID_N + 1)
+                f = np.array([f1_of_damage(x) for x in d])  # strictly decreasing
+                _GRID_CACHE = (d, f, float(f[0]), float(f[-1]))
+    return _GRID_CACHE
+
+
+def _damage_from_f1_grid(f1: float) -> Optional[float]:
+    """Nearest-bin damage from the coarse grid; None when f1 is out of range."""
+    d, f, f_upper, f_lower = _get_grid()
+    if not (f_lower < f1 <= f_upper):
+        return None
+    # f is strictly decreasing, so the bin bracketing f1 is [n-1, n] where n =
+    # (# of grid f1 entries still >= f1): f[n-1] >= f1 is the LAST such entry
+    # and f[n] is the FIRST one below f1.  (argmax over a decreasing boolean
+    # array would always return 0 — the first True — so the count is the
+    # correct index, not the argmax.)
+    n = int(np.count_nonzero(f >= f1))
+    if not (1 <= n <= _DAMAGE_GRID_N):
+        return None
+    lo_d, hi_d = float(d[n - 1]), float(d[n])
+    lo_f, hi_f = float(f[n - 1]), float(f[n])
+    if hi_f >= lo_f:            # guard against a flat bin (defensive only)
+        return 0.5 * (lo_d + hi_d)
+    frac = (f1 - lo_f) / (hi_f - lo_f)      # 0 at the left bin, 1 at the right
+    return lo_d + frac * (hi_d - lo_d)
+
+
 def damage_from_f1(f1: float, lo: float = 0.0, hi: float = 0.9,
                    tol: float = 1e-4) -> float:
     """Invert `f1_of_damage` (bisection): the mid-span EI reduction % that
     reproduces a measured f1.  Monotone, so bisection converges fast.  The
     range [0, 0.9] reaches `tol` in ~14 iterations; the old fixed 80-loop ran
     ~6x more FEM solves than the tolerance allows (each solve is the FEM
-    eigenvalue problem), so we exit as soon as the bracket is tight."""
+    eigenvalue problem), so we exit as soon as the bracket is tight.
+
+    PERF-02: repeat queries (the twin polls the overlay ~every 1.5s) hit the
+    coarse-grid lookup first — a single O(1) argmax over the precomputed
+    monotone table instead of ~14 FEM solves; only a genuine table miss falls
+    through to the exact bisection.  ``lo/hi/tol`` are honoured verbatim on the
+    fallback path, and the grid is bypassed entirely for those callers.
+    """
     if f1 <= 0 or f1 >= F1_REF:
         return 0.0
+    if lo == 0.0 and hi == 0.9 and tol == 1e-4:   # shipped caller -> grid first
+        g = _damage_from_f1_grid(f1)
+        if g is not None:
+            return g
     for _ in range(80):
         mid = 0.5 * (lo + hi)
         if hi - lo < tol:

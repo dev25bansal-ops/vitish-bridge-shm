@@ -104,6 +104,31 @@ def main(argv=None) -> int:
     cfg.demo_speed = args.speed
     bus = events.get_bus()
 
+    # --- PERF-01: eager trained-detector prebuild ---------------------------------
+    # The first trained_push used to build the detector inline (torch.load +
+    # joblib, measured ~2.1s on CUDA) — a stall that hit the first anomaly push.
+    # Kick the build off on a background daemon thread NOW, before the simulator
+    # starts streaming; trained_push never blocks on it (non-blocking lock, the
+    # deterministic floor carries any window scored before the build lands).
+    # Fire-and-forget: a missing/broken artifact degrades to push=0, never a crash.
+    try:
+        from models.vibration import demo_predictor as dp_mod
+        dp_mod.prebuild_detector()
+    except Exception as exc:  # pragma: no cover - models/ import must never break boot
+        log.debug("trained-detector prebuild skipped (%s)", exc)
+
+    # --- PERF-03: eager crack-model prebuild --------------------------------------
+    # The t=45 cv beat used to pay a ~4.7s torch.load of crack_seg.pt inline on
+    # the scoring thread.  Kick off the same background build now so the model is
+    # warm before the first cv beat; cv_feed.get_detector() is non-blocking and
+    # degrades to the tagged scripted fallback if it is still loading.  Also
+    # warms any CUDA context before the demo's first cv beat.
+    try:
+        from app import cv_feed as cv_mod
+        cv_mod.prebuild_detector()
+    except Exception as exc:  # pragma: no cover
+        log.debug("cv-detector prebuild skipped (%s)", exc)
+
     # --- optional live public-broker feed (opt-in, fail-soft) -----------------
     live = args.live or os.environ.get("VITISH_LIVE") == "1"
     live_feed = None

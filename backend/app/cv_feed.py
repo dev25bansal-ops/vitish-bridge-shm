@@ -52,32 +52,84 @@ log = logging.getLogger(__name__)
 
 # -- cached detector ----------------------------------------------------------
 _detector: Optional[Any] = None
+_detector_failed = False
 _detector_lock = threading.Lock()
 
 
-def get_detector() -> Any:
-    """Return the process-wide strict CrackDetector, building it once.
+def get_detector() -> Optional[Any]:
+    """Return the process-wide strict CrackDetector, building it once (or None
+    while a prebuild is in flight / after a build failure).
 
     Shared by the demo path and ``?run_seg=1`` so the 92 MB model is loaded a
-    single time per process (ROADMAP line 44). Not thread-cached for writes
-    beyond the lock — building is idempotent and callers never mutate it.
+    single time per process (ROADMAP line 44).  PERF-03: a first call used to
+    hold the lock for the full torch load (~4.7s on disk) — a stall on the
+    fusion thread at the t=45 cv beat.  ``prebuild_detector()`` (run_all) now
+    kicks the load off at startup on a daemon thread; ``get_detector`` never
+    blocks on that: while the build is in flight it returns None (a lock-reentry
+    deadlock is also avoided — ``evidence`` calls this from a load catch).  The
+    caller treats None like "model not ready" and falls back to scripted cv,
+    which is the honest offline behavior.  Idempotent; a build failure latches
+    ``_detector_failed``.
     """
-    global _detector
+    global _detector, _detector_failed
     if _detector is not None:
         return _detector
-    with _detector_lock:
-        if _detector is None:
+    if _detector_failed:
+        return None
+    if not _detector_lock.acquire(blocking=False):
+        return None                       # prebuild still in flight
+    try:
+        if _detector is None and not _detector_failed:
             from models.cv.inference import CrackDetector
             _detector = CrackDetector(weights_path=WEIGHTS, conf=DETECT_CONF,
                                       iou=DETECT_IOU)
+    except Exception as exc:              # pragma: no cover - only when models/ is broken
+        log.warning("cv_feed: detector init failed (%s); scripted fallback", exc)
+        _detector_failed = True
+    finally:
+        _detector_lock.release()
     return _detector
+
+
+def prebuild_detector() -> None:
+    """Eagerly load the crack model on a background daemon thread (PERF-03).
+
+    The t=45 storyboard cv beat used to pay a ~4.7s torch.load of the 92 MB
+    crack_seg.pt inline, on the fusion scoring thread.  Startup (run_all) now
+    fires this so the model is warm before the demo reaches the first cv beat;
+    ``get_detector`` is non-blocking, so the demo path degrades to the scripted
+    fallback (honestly tagged) if the build is still in flight.  Idempotent and
+    safe when weights are absent.
+    """
+    global _detector_failed
+    if _detector is not None or _detector_failed:
+        return
+
+    def _build() -> None:
+        global _detector, _detector_failed
+        if not _detector_lock.acquire(blocking=False):
+            return
+        try:
+            if _detector is None and not _detector_failed:
+                from models.cv.inference import CrackDetector
+                _detector = CrackDetector(weights_path=WEIGHTS, conf=DETECT_CONF,
+                                          iou=DETECT_IOU)
+        except Exception as exc:          # pragma: no cover
+            log.warning("cv_feed: prebuild failed (%s); scripted fallback", exc)
+            _detector_failed = True
+        finally:
+            _detector_lock.release()
+
+    threading.Thread(target=_build, name="cv-detector-prebuild",
+                     daemon=True).start()
 
 
 def reset_detector() -> None:
     """Drop the cached detector (test seam / source-change reset)."""
-    global _detector
+    global _detector, _detector_failed
     with _detector_lock:
         _detector = None
+        _detector_failed = False
 
 
 # -- detection -> cv evidence -------------------------------------------------
@@ -103,6 +155,11 @@ def evidence(frame_name: str, fallback_cv: float = 0.30) -> Dict[str, Any]:
     frame_path = DEMO_FRAMES / frame_name
     try:
         det = get_detector()
+        if det is None:
+            # PERF-03: model still loading (or build failed) — scripted fallback
+            # rather than blocking the fusion thread on the 92 MB load.  The row
+            # is tagged honestly; the very next cv beat retries the real model.
+            raise RuntimeError("crack model not ready (prebuild in flight or failed)")
         img = cv2.imread(str(frame_path))
         if img is None:
             raise FileNotFoundError(f"demo frame missing: {frame_path}")

@@ -28,6 +28,7 @@ Honesty + safety rules:
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +36,7 @@ import numpy as np
 
 _detector: Optional["AnomalyDetector"] = None
 _detector_failed = False
+_build_lock = threading.Lock()
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_WEIGHTS = _REPO_ROOT / "models" / "weights"
@@ -54,6 +56,41 @@ def _build_detector():
     return AnomalyDetector(weights_dir=_DEFAULT_WEIGHTS, n_healthy=_N_HEALTHY)
 
 
+def prebuild_detector() -> None:
+    """Eagerly build the trained detector on a background thread (PERF-01).
+
+    The FIRST ``trained_push`` used to build the detector inline — torch.load +
+    joblib, measured ~2.1s on CUDA / ~1s CPU — a stall that hit the first
+    anomaly push (the fusion thread scoring the first windows).  Startup now
+    kicks this off in a daemon thread so the model is warm before scoring
+    matters.  ``trained_push`` never blocks on the prebuild: it takes the same
+    lock non-blocking and returns 0.0 (honest: trained evidence not ready yet)
+    if the build is still in flight — the deterministic floor carries those
+    windows.  Idempotent + safe when weights are absent (a failure latches
+    ``_detector_failed`` exactly like the inline path).
+    """
+    if _detector is not None or _detector_failed:
+        return
+
+    def _build() -> None:
+        global _detector, _detector_failed
+        if not _build_lock.acquire(blocking=False):
+            return
+        try:
+            if _detector is None and not _detector_failed:
+                _detector = _build_detector()
+        except Exception as exc:  # pragma: no cover - only when models/ is broken
+            import logging
+            logging.getLogger(__name__).warning(
+                "demo_predictor: prebuild failed (%s); trained push disabled", exc)
+            _detector_failed = True
+        finally:
+            _build_lock.release()
+
+    threading.Thread(target=_build, name="trained-detector-prebuild",
+                     daemon=True).start()
+
+
 def trained_push(window, fs: int = 100, temperature: float | None = None) -> float:
     """Return the trained ensemble's envelope-relative evidence, float in [0,1].
 
@@ -63,13 +100,22 @@ def trained_push(window, fs: int = 100, temperature: float | None = None) -> flo
     """
     global _detector, _detector_failed
     if _detector is None and not _detector_failed:
-        try:
-            _detector = _build_detector()
-        except Exception as exc:  # pragma: no cover - only when models/ is broken
-            import logging
-            logging.getLogger(__name__).warning(
-                "demo_predictor: detector init failed (%s); trained push disabled", exc)
-            _detector_failed = True
+        # Non-blocking: if a prebuild is already in flight, skip this window
+        # rather than stalling the scoring thread (PERF-01 — the old inline
+        # build was a multi-second first-call stall).
+        if _build_lock.acquire(blocking=False):
+            try:
+                if _detector is None and not _detector_failed:
+                    _detector = _build_detector()
+            except Exception as exc:  # pragma: no cover - only when models/ is broken
+                import logging
+                logging.getLogger(__name__).warning(
+                    "demo_predictor: detector init failed (%s); trained push disabled", exc)
+                _detector_failed = True
+            finally:
+                _build_lock.release()
+        else:
+            return 0.0
     if _detector is None:
         return 0.0
     try:
