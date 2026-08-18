@@ -100,6 +100,10 @@ def cors_origins() -> list[str]:
 # are busy); reported via /api/config so the twin never hardcodes them.
 _api_port: Optional[int] = None
 
+# item 20: static-mount status, filled by create_app (also echoed at
+# /api/config) — keeps the module import-free of fastapi.staticfiles at load.
+_static: dict = {"twin": False, "landing": False}
+
 
 def set_api_port(port: int) -> None:
     global _api_port
@@ -649,7 +653,17 @@ def create_app() -> FastAPI:
                 "extra_bridges": bridge_registry.extra_bridges(),
                 "onboard_label": bridge_registry.ONBOARD_LABEL,
             },
+            # item 20 (public demo): static mounts status — tells a hosted twin
+            # / landing consumer whether this process also serves the sites.
+            "static": {"twin": _static.get("twin", False),
+                       "landing": _static.get("landing", False)},
         }
+
+    # item 20: serve the landing at / and the built twin at /twin LAST, so the
+    # explicit /api, /ws, /health routes always win and a missing twin/dist is a
+    # no-op (a source checkout without a build is unchanged).
+    from app import static_serve
+    _static.update(static_serve.install_static(app))
 
     return app
 

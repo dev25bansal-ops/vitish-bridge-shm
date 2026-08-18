@@ -45,6 +45,8 @@ docker-data/
 # Secrets / env
 .env
 *.env.local
+# Hosted-demo secrets (deploy/hosted-demo/.env.public — the example is committed)
+deploy/hosted-demo/.env.public
 
 # Obsidian
 .obsidian/workspace.json
@@ -56,6 +58,9 @@ docker-data/
 !docker-compose.yml
 !package.json
 !data/ltbp/analysis/*.json
+# Item 20 (landing): the provenance manifest is committed evidence — every film
+# is labeled here with its real source; the fixed exception overrides *.json
+!landing/assets/manifest.json
 # Item 21 (fleet-prior learning loop): the DERIVED merged summary is a
 # generated artifact of scripts/ltbp_merge.py — its regeneration is the
 # committed command; never commit the merged output itself.

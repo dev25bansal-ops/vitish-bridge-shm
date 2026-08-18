@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>VITISH — Bridge SHM that catches the next Morbi before the news does</title>
+  <meta name="description" content="Scroll to fly through the real Z24 bridge benchmark and meet VITISH — an honest, auditable structural-health monitoring system. Smart India Hackathon 2026 · PS#99." />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Theme the scroll-world engine — hero still uses the light hero palette. */
+    :root, .sw-root {
+      --sw-bg: #0b132b;
+      --sw-ink: #e0e7f5;
+      --sw-ink-soft: #6b7a99;
+      --sw-accent: #7fd4ff;
+      --sw-font-display: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, sans-serif;
+      --sw-font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div id="top"></div>
+  <div id="world"></div>
+
+  <script src="scrub-engine.js"></script>
+  <script>
+    mountScrollWorld(document.getElementById('world'), {
+      brand: { name: 'VITISH', href: '#top' },
+      cta: { label: 'Try the live demo', href: 'twin/' },
+      hint: 'scroll to fly in',
+      diveScroll: 1.2,
+      connScroll: 0.8,
+      nav: true,
+      sections: [
+        {
+          id: 'hero', label: 'Hero',
+          still: 'assets/stills/hero.webp',
+          clip: 'assets/films/hero.mp4',
+          accent: '#2ee6a8',
+          eyebrow: 'Structural-health monitoring',
+          title: 'Catch the next Morbi before the news does.',
+          body: 'Real benchmark data through the real production pipeline — every number on screen traces to real data or a clearly-labeled model assumption.',
+          tags: ['real Z24 replay', 'never a mockup', 'SIH 2026 · PS#99'],
+        },
+        {
+          id: 'data', label: 'The data',
+          still: 'assets/stills/data.webp',
+          clip: 'assets/films/data.mp4',
+          accent: '#7fd4ff',
+          eyebrow: 'Real benchmark, real pipeline',
+          title: 'Vibration from a real bridge.',
+          body: '100 Hz acceleration from the Z24 benchmark — a 58 m prestressed concrete bridge in Koppigen, Switzerland — replayed through the real ingest–fuse–display path.',
+          tags: ['1530 × 60 s segments', '27 channels', '17 condition states'],
+        },
+        {
+          id: 'model', label: 'Detection',
+          still: 'assets/stills/model.webp',
+          clip: 'assets/films/model.mp4',
+          accent: '#ffcf5c',
+          eyebrow: 'The machine-learning core',
+          title: 'Separation you can measure.',
+          body: 'VAE + OCSVM + LSTM-AE trained on real Z24 — the healthy and damaged states separate in the measured power spectrum, not in a PowerPoint.',
+          tags: ['real PSD', 'labels 0 vs 2–16'],
+        },
+        {
+          id: 'cv', label: 'Crack CV',
+          still: 'assets/stills/cv.webp',
+          clip: 'assets/films/cv.mp4',
+          accent: '#ff5c7a',
+          eyebrow: 'Computer-vision cracks',
+          title: 'From photo to condition card.',
+          body: 'crack_seg.pt trained on CrackSeg9k (CC0) — real detections on real crack photos drive the cv sub-index that feeds the Bridge Health Index.',
+          tags: ['real crack_seg.pt', 'CrackSeg9k (CC0)'],
+        },
+        {
+          id: 'fleet', label: 'Fleet',
+          still: 'assets/stills/fleet.webp',
+          clip: 'assets/films/fleet.mp4',
+          accent: '#2ee6a8',
+          eyebrow: 'Whole-fleet decision surface',
+          title: 'Prior-driven deterioration.',
+          body: 'Markov projection under an empirical LTBP fleet prior (44 real pilot bridges) — a probabilistic band, never a certified RUL.',
+          tags: ['LTBP prior', 'not a certified RUL'],
+        },
+        {
+          id: 'demo', label: 'The demo', still: 'assets/stills/demo.webp',
+          clip: 'assets/films/demo.mp4',
+          accent: '#8a7bb5',
+          eyebrow: 'The verified demo arc',
+          title: 'Watch a bridge fail — safely.',
+          body: 'BHI 87.1 GREEN → 45 s crack → 75 s rupture onset (AMBER) → 105 s RED → holds 33.6, measured, no flicker, on real Z24 replay.',
+          tags: ['pinned by verify_demo_arc.py', 'physics-grounded'],
+          cta: {
+            primary: { label: 'Open the live demo', href: 'twin/' },
+            secondary: { label: 'Run it locally →', href: '../README.md#quick-start' },
+          },
+        },
+      ],
+      connectors: [
+        'assets/films/conn1.mp4',
+        'assets/films/conn2.mp4',
+        'assets/films/conn3.mp4',
+        'assets/films/conn4.mp4',
+        'assets/films/conn5.mp4',
+      ],
+    });
+  </script>
+
+  <!-- Honest provenance panel — read from the renderer's manifest so the labels
+       can never drift from what was actually rendered. -->
+  <script>
+    fetch('assets/manifest.json')
+      .then(r => r.json())
+      .then(m => {
+        const el = document.getElementById('provenance');
+        if (!el || !m.films) return;
+        const rows = Object.entries(m.films)
+          .map(([name, f]) =>
+            `<tr><td class="pp-key">${name}</td><td class="pp-val">${f.provenance}</td></tr>`)
+          .join('');
+        el.querySelector('tbody').innerHTML = rows;
+        el.querySelector('.pp-source').textContent = m.source;
+      })
+      .catch(() => { /* panel stays hidden if the manifest is missing */ });
+  </script>
+
+  <footer class="sw-foot" id="provenance">
+    <div class="sw-foot__inner">
+      <p class="sw-foot__brand">VITISH · Smart India Hackathon 2026 · Problem Statement #99</p>
+      <p class="pp-source">Every scene in this flight is real measured evidence — the Z24 bridge benchmark, real crack-segmentation model output, and the empirical LTBP fleet prior.</p>
+      <table class="pp-table">
+        <thead><tr><th>scene</th><th>provenance</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="sw-foot__honesty">This is a <strong>demonstration</strong>, not a certified assessment. No live field sensors are claimed; the twin is a verified demonstration of the pipeline on real benchmark data. See <a href="../docs/HONESTY-METHODOLOGY.md">docs/HONESTY-METHODOLOGY.md</a>.</p>
+      <p class="sw-foot__links">
+        <a href="../README.md">README</a> ·
+        <a href="../docs/COMPREHENSIVE-ANALYSIS.md">analysis</a> ·
+        <a href="https://github.com/oso95/scroll-world" rel="noopener">flight engine: scroll-world (MIT)</a>
+        · films rendered by <a href="../scripts/render_z24_films.py">scripts/render_z24_films.py</a>
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

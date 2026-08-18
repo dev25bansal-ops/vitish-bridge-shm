@@ -10,7 +10,7 @@ This is not a mockup. The pipeline ingests, fuses, and displays **real benchmark
 
 | Channel | What it actually is |
 |---|---|
-| Vibration | **Real Z24 bridge benchmark replay** (Swiss box girder, 14+30+14 m, 100 Hz) — the canonical progressive-damage dataset in structural-health research |
+| Vibration | **Real Z24 bridge benchmark replay** (Swiss box girder, 14+30+14 m, 100 Hz) — the canonical progressive-damage dataset in structural-health research. **This same benchmark drives the landing-page dives** (see below). |
 | CV | **`crack_seg.pt` trained on CrackSeg9k** (real crack-segmentation dataset, CC0) + OpenCV fallback; condition cards from actual detections |
 | Live feed | **Live public-broker MQTT ingestion** (third-party demo feed, labeled `live-demo`, never fused into the hero BHI) |
 | Physics | Euler-Bernoulli 3-span FEM of the Z24 — damage is a **seeded EI loss** (settlement → cracking → tendon rupture, per the published benchmark), and the *measured* first-mode frequency shifts per the evidence |
@@ -46,10 +46,31 @@ cd twin && npm install && npm run dev
 
 Then open the twin. The `▶ Replay damage arc` button runs the whole story; `Geo view` shows the Z24 site on real Cesium terrain/3D tiles.
 
+## Landing page + hosted public demo
+
+The repo's landing page is a **scroll-scrubbed camera flight** (`landing/`) — six
+8-second dives + connector clips **rendered from the real Z24 benchmark**
+(`scripts/render_z24_films.py`, matplotlib → bundled ffmpeg), each labeled with
+its provenance in `landing/assets/manifest.json`. It is not a static marketing
+page, and it is not an AI video — it is the measured benchmark, scrubbed by a
+vendored MIT engine.
+
+Servicing it is one command — the backend mounts the built twin at `/twin` and
+the landing at `/`:
+
+```bash
+cd backend && python app/run_all.py --demo   # with twin/dist present: http://localhost:8000/
+```
+
+- Landing → `http://localhost:8000/` (scroll to fly through); the **demo section** CTA links to `/twin/`.
+- Twin → `http://localhost:8000/twin/` — served same-origin, so the hosted
+  non-localhost twin talks to `/api` + `/ws` on its own origin automatically.
+- Going public (hosting account + DNS) is the one external step — see [`deploy/hosted-demo/`](deploy/hosted-demo/README.md) for the secure-mode recipe (loopback binds, broker auth/ACL, token-gated demo route, exact-origin WS/CORS).
+
 ## Verification
 
 ```bash
-bash scripts/verify_gate.sh   # 8 gates, 291 checks — the pre-push merge gate
+bash scripts/verify_gate.sh   # 24 gates — the pre-push merge gate
 ```
 
 ## Layout
@@ -57,7 +78,9 @@ bash scripts/verify_gate.sh   # 8 gates, 291 checks — the pre-push merge gate
 ```
 backend/   Python pipeline: simulator, MQTT, Postgres, WebSocket bridge, FastAPI, demo driver
 models/    Vibration + CV + fusion + FEM stiffness/seeded-defect (train & inference)
-twin/      React Three Fiber digital twin + Cesium geo layer
+twin/      React Three Fiber digital twin + Cesium geo layer (served statically at /twin)
+landing/   scroll-world landing page (real-Z24 films + provenance) — served at /
+deploy/    hosting recipes — hosted-demo runs the SEC-mode public shape
 vault/     Obsidian knowledge base — research, build log, storyboard, Q&A prep
 data/      Dataset cache (gitignored)
 scripts/   verify_gate.sh + dataset tooling

@@ -1,0 +1,24 @@
+# VITISH 2026 · PS#99 SHM — hosted public demo (Caddy reverse proxy).
+#
+# One-file HTTPS + WS termination in front of the FastAPI backend running on
+# 127.0.0.1:8000.  Caddy obtains + renews TLS automatically (Let's Encrypt) and
+# transparently upgrades /ws to a WebSocket — no container port is exposed to
+# the public interface except these two lines.
+#
+#   demo.example.com {
+#     encode gzip zstd
+#     reverse_proxy 127.0.0.1:8000
+#   }
+#
+# The backend itself stays loopback-bound (SEC-01/04) even in "public" mode:
+# VITISH_API_HOST/WS_HOST only relax the bind to the container/host interface
+# that Caddy reaches.  Path security is inherited from the app:
+#   /  -> backend/app/static_serve.py serves the scroll-world landing
+#   /twin -> the built twin SPA (relative ./assets URLs)
+#   /api, /ws, /health -> the real stack (WS origin-checked, CORS-pinned)
+#
+# The brute-force surface is the single Caddy port; the /api/demo/scenario
+# route stays token-gated (SEC-02) and WS accepts only the exact public origin
+# (SEC-03).  DNS for demo.example.com is the ONE external step (CEO/BD) — until
+# the domain resolves, `caddy run` will fail TLS ordering; the documented
+# verified path is the loopback smoke (deploy/hosted-demo/README.md §4).

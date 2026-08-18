@@ -5,7 +5,7 @@ run from a **Git Bash** terminal (this repo) unless stated otherwise.
 
 > Guardrail: **the pinned demo arc (GREEN 87.1 → AMBER 67.5 → RED 33.6) must
 > never break.** After ANY change run `bash scripts/verify_gate.sh` — it must
-> end with `== ALL 23 GATES PASS ==`.
+> end with `== ALL 24 GATES PASS ==`.
 
 ---
 
@@ -26,6 +26,22 @@ npm run dev
 Open **http://localhost:5173** → the twin renders the Z24 hero bridge and drives
 the full healthy→rupture→recovery story. Backend banner prints the actual API /
 WS ports (they fall back to the next free port if 8000/8765 are busy).
+
+**Landing + hosted twin (item 20):** with a twin production build present
+(`cd twin && npm run build` → `twin/dist/`), the backend serves both the
+scroll-world landing (with real-Z24 films) and the built twin on its own origin:
+
+```bash
+cd backend
+python -m app.run_all --demo         # then open http://localhost:8000/  (landing)
+#                                    # and http://localhost:8000/twin/  (same-origin twin)
+```
+
+This is the exact public-demo shape for a real host — the backend serves the
+twin and the landing itself, so a non-localhost visitor's browser talks to
+`/api` + `/ws` on the served origin with no extra port. Going fully public
+needs hosting + DNS (the one external step): see
+[`deploy/hosted-demo/`](deploy/hosted-demo/README.md) for the SEC-mode recipe.
 
 Add `--live` (or `VITISH_LIVE=1`) to also stream the **real public MQTT feed**
 (`test.mosquitto.org`, bridge `live-demo`) alongside the Z24 replay:
@@ -169,13 +185,17 @@ curl -s http://localhost:8000/api/manifest  # what each channel actually is
 ### Tests
 
 ```bash
-bash scripts/verify_gate.sh      # 23-gate merge gate (incl. demo-arc re-pin)
-bash scripts/run_tests.sh        # superset — every standalone backend test
+bash scripts/verify_gate.sh      # 24-gate merge gate (incl. demo-arc re-pin + hosted-demo)
+bash scripts/run_tests.sh        # superset — every standalone backend test (30 files)
 cd twin && npm run lint && npm run test && npm run typecheck   # twin suite
 cd twin && npm run build         # production build check
 ```
 
+Check `http://localhost:8000/` renders the landing (scroll-scrubs through the
+real-Z24 films and CTA to `/twin/`), and `http://localhost:8000/twin/` connects
+same-origin (`LIVE · backend ws` badge, no other host in the network tab).
+
 ---
 
-*Maintained as `docs/ROADMAP-NEXT.md` line 103. Last verified 2026-08-18 (all 23
-gates pass, SEC hardening + §2.3 perf campaign landed).*
+*Maintained as `docs/ROADMAP-NEXT.md` line 103. Last verified 2026-08-18 (all 24
+gates pass, SEC hardening + §2.3 perf campaign + item 20 landing/hosting landed).*

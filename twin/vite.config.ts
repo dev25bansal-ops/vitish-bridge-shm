@@ -12,6 +12,11 @@ import cesium from 'vite-plugin-cesium'
 //  - cesium() copies the CesiumJS static assets (Workers/Assets/Widgets) and
 //    sets CESIUM_BASE_URL, powering the D2-7 georeferenced context view.
 export default defineConfig({
+  // Item 20 (hosted public demo): the twin is served from backend/app/
+  // static_serve.py under /twin, so the build must emit RELATIVE asset URLs
+  // (./assets/...) — an absolute /assets base would point at the site root
+  // and 404.  A standalone twin deploy keeps working (relative from /).
+  base: './',
   plugins: [react(), cesium()],
   server: {
     port: 5173,

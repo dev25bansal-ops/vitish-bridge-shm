@@ -1,0 +1,111 @@
+/* VITISH landing — page layer above the vendored scroll-world engine.
+   The engine injects its own per-scene CSS into a cascade layer (sw-engine) and
+   wraps everything in a `sw-root` class using --sw-* theme tokens; this file is
+   unlayered, so it wins on any conflict.  The footer is in normal flow at the
+   END of the flight (after #world's .sw-track): the engine builds the track
+   height itself (+1vh so the last flight completes), and the footer z-index
+   (30) sits it above the fixed scene/copy layers once scrolled into view. */
+
+html {
+  scroll-behavior: smooth;
+  background: var(--sw-bg, #f5f1e6);
+}
+
+/* Hosted-public-demo friendly: the landing can be served from / by the backend
+   (backend/app/static_serve.py) or from any static host.  Both the flight and
+   the provenance footer belong to this page. */
+body {
+  font-family: var(--sw-font-body, -apple-system, BlinkMacSystemFont,
+                    "Segoe UI", Roboto, system-ui, sans-serif);
+  color: var(--sw-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- provenance footer (normal flow, end-of-flight) ----------------------- */
+#provenance.sw-foot {
+  position: relative;
+  z-index: 30;                    /* above the fixed scene/copy/track layers */
+  display: block;
+  padding: 64px clamp(18px, 5vw, 64px) 96px;
+  background: var(--sw-bg);
+  border-top: 1px solid color-mix(in srgb, var(--sw-accent) 22%, transparent);
+}
+
+.sw-foot__inner {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.sw-foot__brand {
+  font-family: var(--sw-font-display, ui-rounded, "Segoe UI", system-ui, sans-serif);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  margin: 0 0 10px;
+}
+
+.sw-foot__honesty,
+.sw-foot__links,
+.pp-source {
+  color: var(--sw-ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.pp-source {
+  margin: 0 0 22px;
+}
+
+.pp-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0 24px;
+  font-size: 0.86rem;
+}
+
+.pp-table th,
+.pp-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--sw-ink) 14%, transparent);
+}
+
+.pp-table th {
+  color: var(--sw-ink-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+}
+
+.pp-key {
+  color: var(--sw-accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pp-val {
+  color: var(--sw-ink);
+}
+
+.sw-foot__honesty strong {
+  color: var(--sw-ink);
+}
+
+.sw-foot__honesty a,
+.sw-foot__links a {
+  color: var(--sw-accent);
+}
+
+.sw-foot__links {
+  margin: 8px 0 0;
+}
+
+/* --sw-bg is overridden light on the hero section; the footer inherits the
+   :root token (dark) so the end-of-flight landing matches the last dive. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
