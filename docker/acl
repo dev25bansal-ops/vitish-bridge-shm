@@ -1,0 +1,27 @@
+# VITISH broker topic ACL — SECURE MODE (copied into the container by
+# docker-compose.yml when VITISH_MQTT_USER/PASS are set).
+#
+# mosquitto DENIES by default when an acl_file is active: a client is only
+# granted what these lines allow.  The security boundary is therefore:
+#   * connect layer — allow_anonymous false + password_file: a random
+#     venue-WiFi device has NO credential and is rejected at CONNECT;
+#   * topic layer — this file: ONLY the backend credential (VITISH_MQTT_USER)
+#     may WRITE; every other authenticated client is read-only by default.
+#
+# The backend process (simulator / fusion / demo driver / recorder) is a real
+# MQTT client in this stack — it publishes telemetry on bridge/<id>/# and the
+# scenario control on control/cmd — so it authenticates as VITISH_MQTT_USER
+# and is granted readwrite on both.  If you set VITISH_MQTT_USER to something
+# other than `vitish`, update the `user` line below to match.
+
+# the backend process is the sole legitimate telemetry + control writer
+user vitish
+topic readwrite bridge/#
+topic readwrite control/cmd
+
+# an edge node / monitoring subscriber with its OWN credential may read its own
+# bridge tree (mosquitto substitutes %c = client id), e.g. bridge/esp01-1/#
+pattern read bridge/%c/#
+
+# broker internals stay private for everyone
+deny read $SYS/#

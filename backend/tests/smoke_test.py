@@ -510,14 +510,42 @@ def test_api():
         r = client.get("/api/bridge/nope/state")
         check("unknown bridge -> 404", r.status_code == 404)
 
-        # demo scenario control reaches the bus
+        # demo scenario control reaches the bus — SEC-02 token gate: the
+        # default env has no VITISH_DEMO_TOKEN, so the state-changing route is
+        # DISABLED (403) unless the operator arms it.
         got = []
         tok = events.get_bus().subscribe("control/cmd", lambda t, p: got.append(p))
         r = client.post("/api/demo/scenario", json={"scenario": "rupture"})
-        check("POST scenario 200", r.status_code == 200 and r.json()["ok"] is True)
-        check("scenario lands on bus", got and got[-1]["scenario"] == "rupture")
-        r = client.post("/api/demo/scenario", json={"scenario": "bogus"})
-        check("invalid scenario -> 422", r.status_code == 422)
+        check("POST scenario disabled w/o token -> 403", r.status_code == 403)
+        # enabled path: temporarily arm the token (same settings object the
+        # route reads), then exercise 200 / bad-token 403 / 422 / rate-limit 429.
+        _old_token = api_mod.settings.demo_token
+        api_mod.settings.demo_token = "sec-test-token"
+        try:
+            api_mod._rate_window.clear()
+            r = client.post("/api/demo/scenario", json={"scenario": "rupture"},
+                            headers={"X-VITISH-DEMO": "wrong-token"})
+            check("bad token -> 403", r.status_code == 403)
+            api_mod._rate_window.clear()
+            r = client.post("/api/demo/scenario", json={"scenario": "rupture"},
+                            headers={"X-VITISH-DEMO": "sec-test-token"})
+            check("POST scenario 200", r.status_code == 200 and r.json()["ok"] is True)
+            check("scenario lands on bus", got and got[-1]["scenario"] == "rupture")
+            r = client.post("/api/demo/scenario", json={"scenario": "bogus"},
+                            headers={"X-VITISH-DEMO": "sec-test-token"})
+            check("invalid scenario -> 422", r.status_code == 422)
+            # per-IP rate limit: 5 valid calls within the window, 6th -> 429
+            api_mod._rate_window.clear()
+            codes = [
+                client.post("/api/demo/scenario", json={"scenario": "healthy"},
+                            headers={"X-VITISH-DEMO": "sec-test-token"}).status_code
+                for _ in range(api_mod.settings.demo_rate_limit + 1)
+            ]
+            check("rate-limit: 5 ok then 429",
+                  codes[:5] == [200] * 5 and codes[5] == 429, f"codes={codes}")
+        finally:
+            api_mod.settings.demo_token = _old_token
+            api_mod._rate_window.clear()
         events.get_bus().unsubscribe(tok)
     finally:
         # drop the cached store singleton so it cannot leak into other

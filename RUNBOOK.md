@@ -5,7 +5,7 @@ run from a **Git Bash** terminal (this repo) unless stated otherwise.
 
 > Guardrail: **the pinned demo arc (GREEN 87.1 → AMBER 67.5 → RED 33.6) must
 > never break.** After ANY change run `bash scripts/verify_gate.sh` — it must
-> end with `== ALL 15 GATES PASS ==`.
+> end with `== ALL 23 GATES PASS ==`.
 
 ---
 
@@ -86,7 +86,10 @@ docker compose restart mqtt db
 ```
 
 `POSTGRES_PASSWORD=vitish` and `allow_anonymous` mosquitto are **local-only** —
-see the appendix in `docs/ROADMAP-NEXT.md` before any public deployment.
+all published ports now bind `127.0.0.1`, and secure mode is one env pair away:
+`VITISH_MQTT_USER=vitish VITISH_MQTT_PASS=<strong> docker compose up -d` (the
+backend reads the same vars). See `docs/ROADMAP-NEXT.md` before any public
+deployment.
 
 ---
 
@@ -114,7 +117,7 @@ dacl10k (CC BY-NC) and SDNET2018 (registration-gated) are research data only.
 
 ## 5. Runbook for the numbers (what is honest)
 
-- **Demo arc** — `bash scripts/verify_gate.sh` (gate 15) + `scripts/verify_demo_arc.py`
+- **Demo arc** — `bash scripts/verify_gate.sh` (gate 5 + 15) + `scripts/verify_demo_arc.py`
   re-pin BHI 87.1 → AMBER 67.5 → RED 33.6 against the real replay.
 - **Trained ensemble is ACTIVE on shipped state** — the 2026-08-15 retrain
   (non-degenerate scaler, real Z24) gives real separation: damaged-window
@@ -166,7 +169,7 @@ curl -s http://localhost:8000/api/manifest  # what each channel actually is
 ### Tests
 
 ```bash
-bash scripts/verify_gate.sh      # 15-gate merge gate (incl. demo-arc re-pin)
+bash scripts/verify_gate.sh      # 23-gate merge gate (incl. demo-arc re-pin)
 bash scripts/run_tests.sh        # superset — every standalone backend test
 cd twin && npm run lint && npm run test && npm run typecheck   # twin suite
 cd twin && npm run build         # production build check
@@ -174,5 +177,5 @@ cd twin && npm run build         # production build check
 
 ---
 
-*Maintained as `docs/ROADMAP-NEXT.md` line 103. Last verified 2026-08-15 (all 15
-gates pass on tag `arc-verified-2026-08-13`).*
+*Maintained as `docs/ROADMAP-NEXT.md` line 103. Last verified 2026-08-18 (all 23
+gates pass, SEC hardening + §2.3 perf campaign landed).*

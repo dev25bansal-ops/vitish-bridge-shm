@@ -10,11 +10,15 @@ REST surface for the digital twin and the demo controller:
     GET  /api/bridge/{id}/stiffness      f1, EI drift, damage %, FEM mode shapes
     GET  /api/bridge/{id}/history?metric=bhi|rms&limit=N
     GET  /api/bridge/{id}/alerts?limit=N   recent alerts (live bridge)
-    POST /api/demo/scenario              {"scenario": "healthy"|"rupture"}
+    POST /api/demo/scenario              {"scenario": "healthy"|"rupture"}   (SEC-02: token-gated)
 
 CORS is open because the twin runs on a different port.  The app is state-light:
 it reads the shared store (auto-selected Postgres/memory) and publishes control
 commands on the shared event bus.
+
+SEC-02: the API now binds 127.0.0.1 by default (loopback-only), and the
+state-changing demo route is disabled unless VITISH_DEMO_TOKEN is set (then it
+requires the shared secret + a per-IP rate limit).
 
 CORS origins are environment-driven (COMPREHENSIVE-ANALYSIS NOW item 4, ENH-07):
 ``VITISH_CORS_ORIGINS`` = comma-separated exact origins (e.g. the twin's Vite
@@ -28,10 +32,12 @@ and split credentials (ROADMAP line 121, ROADMAP-NEXT §2 SEC-02).
 """
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple
@@ -40,7 +46,7 @@ from typing import List, Literal, Optional, Tuple
 if str(Path(__file__).resolve().parents[1]) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -68,6 +74,11 @@ log = logging.getLogger(__name__)
 _DEFAULT_HERO = {"bhi": 87.0, "u": 3.0, "cv": 0.10, "vib": 0.12, "load": 0.19,
                  "state": "GREEN"}
 _UPTIME0 = time.time()
+
+# SEC-02: per-IP rate-limit state for POST /api/demo/scenario (operator-paced;
+# guarded by _rate_lock so the API thread is safe).
+_rate_lock = threading.Lock()
+_rate_window: dict = {}
 
 # CORS origins (NOW item 4 / ENH-07): env-driven, safe local default.
 _DEFAULT_CORS_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173")
@@ -567,7 +578,34 @@ def create_app() -> FastAPI:
         return {"bridge": bridge_id, "limit": limit, "alerts": []}
 
     @app.post("/api/demo/scenario")
-    def demo_scenario(req: ScenarioRequest) -> dict:
+    def demo_scenario(req: ScenarioRequest, request: Request) -> dict:
+        """SEC-02: the state-changing demo route is token-gated + rate-limited.
+
+        The operator triggers the rupture flip via curl (Rehearsal-Runbook) —
+        the twin never calls this route.  When no token is configured the route
+        is DISABLED (403): an attacker could otherwise flip the demo healthy↔
+        rupture from the LAN (the exact SEC-02 bite).  ``VITISH_DEMO_TOKEN``
+        enables it; every request must carry ``X-VITISH-DEMO`` = that token and
+        each client IP is limited to ``demo_rate_limit`` calls per
+        ``demo_rate_window_s`` seconds.  Timing-safe token compare.
+        """
+        if not settings.demo_token:
+            raise HTTPException(
+                status_code=403,
+                detail="demo control disabled — set VITISH_DEMO_TOKEN to enable")
+        client = request.client.host if request.client else "unknown"
+        now = time.time()
+        with _rate_lock:
+            _rate_window[client] = [t for t in _rate_window.get(client, [])
+                                    if now - t < settings.demo_rate_window_s]
+            if len(_rate_window[client]) >= settings.demo_rate_limit:
+                raise HTTPException(
+                    status_code=429,
+                    detail="too many demo scenario requests — operator-paced")
+            _rate_window[client].append(now)
+        token = request.headers.get("X-VITISH-DEMO", "")
+        if not hmac.compare_digest(token, settings.demo_token):
+            raise HTTPException(status_code=403, detail="invalid demo token")
         bus = get_bus()
         bus.publish("control/cmd",
                     {"cmd": "scenario", "scenario": req.scenario, "source": "api"},

@@ -25,6 +25,8 @@ import threading
 from typing import Any, Dict, Optional
 
 import websockets
+from websockets.datastructures import Headers
+from websockets.http11 import Request, Response
 
 from app import __version__, contract
 from app.config import Settings
@@ -53,8 +55,39 @@ class WSBridge:
         # control/cmd stream and replayed to freshly-connected clients so the
         # twin never shows "SYSTEM NOMINAL" after a reload mid-arc.
         self._scenario = scenario if scenario in ("healthy", "rupture") else "healthy"
+        # SEC-03 (CSWSH): allowed WS Origins.  ``None`` in the set means "a
+        # client that sends NO Origin header is acceptable" — the e2e smoke
+        # client (and the twin's dev-server first connect) send no Origin, and
+        # a cross-site browser hijack ALWAYS sends one, so this stays CSWSH-safe
+        # while keeping the headerless fallback working.
+        self._origins: Optional[set] = None
+        raw = (cfg.ws_allowed_origins or "").strip()
+        if raw and raw != "*":
+            self._origins = {o.strip() for o in raw.split(",") if o.strip()}
+            self._origins.add(None)
+        # SEC-06: per-client fan-out cap (each client holds a 256-frame queue).
+        self.MAX_CLIENTS = 64
 
     # -- lifecycle ------------------------------------------------------------
+    def _check_origin(self, connection, request: Request) -> Optional[Response]:
+        """SEC-03 (CSWSH): reject WS handshakes whose Origin is not allowed.
+
+        When ``VITISH_WS_ORIGINS`` is empty or ``*`` (the default — the demo
+        binds loopback-only), every origin is accepted.  Otherwise the client's
+        ``Origin`` header (if any) must match an entry exactly; a client that
+        sends NO Origin is accepted too, because a cross-site browser hijack
+        ALWAYS sends one and the e2e/dev clients legitimately send none.  This
+        is the CSWSH boundary: a hostile webpage on the LAN cannot subscribe to
+        the live telemetry stream with a forged page Origin.
+        """
+        if self._origins is None:
+            return None
+        origin = request.headers.get("Origin") if request.headers else None
+        if origin in self._origins:
+            return None
+        log.warning("WS bridge: rejecting handshake with Origin %r", origin)
+        return Response(403, "Forbidden", Headers(), body=b"origin not allowed")
+
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
@@ -70,7 +103,8 @@ class WSBridge:
         for port in range(self.cfg.ws_port, self.cfg.ws_port + 20):
             try:
                 async with websockets.serve(
-                    self._handler, self.cfg.ws_host, port, max_size=8_000_000
+                    self._handler, self.cfg.ws_host, port,
+                    process_request=self._check_origin, max_size=8_000_000
                 ) as server:
                     self.bound_port = port
                     self._sub_token = self.bus.subscribe(
@@ -147,7 +181,18 @@ class WSBridge:
     async def _handler(self, conn) -> None:
         q: asyncio.Queue = asyncio.Queue(maxsize=256)
         cid = id(conn)
+        # SEC-06: bound the client count so a LAN/loopback flood can't grow the
+        # fan-out (each client holds a 256-frame queue + a socket).  The demo
+        # needs one twin tab; 64 is generous headroom.
         with self._lock:
+            if len(self._clients) >= self.MAX_CLIENTS:
+                log.warning("WS bridge: client limit reached (%d) — rejecting",
+                            self.MAX_CLIENTS)
+                try:
+                    await conn.close(code=1013, reason="too many clients")
+                except Exception:
+                    pass
+                return
             self._clients[cid] = {"queue": q}
         hello = json.dumps({
             "topic": "hello",

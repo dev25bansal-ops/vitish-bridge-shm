@@ -96,6 +96,12 @@ class Publisher:
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=cid
         )
+        # SEC-01: optional broker auth.  Credentials are sent ONLY when both
+        # username and password are configured — the compose default (anonymous)
+        # and the public-broker live feed (live_feed.py builds its own client)
+        # are unaffected.
+        if cfg.mqtt_username and cfg.mqtt_password:
+            self.client.username_pw_set(cfg.mqtt_username, cfg.mqtt_password)
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
@@ -252,6 +258,9 @@ class Subscriber:
         self.client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=cid
         )
+        # SEC-01: optional broker auth (see Publisher — sent only when both are set).
+        if cfg.mqtt_username and cfg.mqtt_password:
+            self.client.username_pw_set(cfg.mqtt_username, cfg.mqtt_password)
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message

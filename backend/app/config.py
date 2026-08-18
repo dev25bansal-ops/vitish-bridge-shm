@@ -15,7 +15,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from dotenv import load_dotenv
 
@@ -89,12 +89,33 @@ class Settings:
     broker_host: str = "localhost"
     broker_port: int = 1883
     mqtt_keepalive: int = 60
+    # SEC-01: optional broker auth (the local docker/mosquitto broker in
+    # "secure mode").  Empty = anonymous, matching the compose default; the
+    # run_all Publisher/Subscriber send credentials ONLY when both are set.
+    mqtt_username: Optional[str] = None
+    mqtt_password: Optional[str] = None
 
     # --- services ------------------------------------------------------------
-    ws_host: str = "0.0.0.0"
+    # SEC-02: bind the loopback interface by default.  The demo runs on the
+    # laptop itself (backend + twin on the same host), so 127.0.0.1 is the
+    # correct default and removes the whole LAN from the attack surface.  A
+    # LAN-exposed deployment must pass VITISH_WS_HOST=0.0.0.0 etc. explicitly.
+    ws_host: str = "127.0.0.1"
     ws_port: int = 8765
-    api_host: str = "0.0.0.0"
+    api_host: str = "127.0.0.1"
     api_port: int = 8000
+    # SEC-02: shared-secret check + per-IP rate limit on the state-changing
+    # demo route (POST /api/demo/scenario).  Empty token = the route is
+    # DISABLED (403) unless VITISH_DEMO_TOKEN is set; per-IP: 5 requests per
+    # 10 s window (operator-paced; the twin never calls this route).
+    demo_token: str = ""
+    demo_rate_limit: int = 5
+    demo_rate_window_s: float = 10.0
+    # SEC-03 (CSWSH): comma-separated WS Origins accepted by the WS bridge
+    # (exact matches).  Empty / ``*`` = accept any origin (default — the demo
+    # runs loopback-only and the twin/dev tools send no Origin); a LAN-exposed
+    # deployment must set exact origins (e.g. the twin's dev-server origin).
+    ws_allowed_origins: str = ""
 
     # --- persistence ---------------------------------------------------------
     # No default credential (ROADMAP line 92): Postgres is opt-in via the
@@ -159,10 +180,16 @@ def load_settings() -> Settings:
         nodes=_env_list_int("VITISH_NODES", contract.Z24_SIM_NODES),
         broker_host=_env_str("VITISH_MQTT_HOST", "localhost"),
         broker_port=_env_int("VITISH_MQTT_PORT", 1883),
-        ws_host=_env_str("VITISH_WS_HOST", "0.0.0.0"),
+        ws_host=_env_str("VITISH_WS_HOST", "127.0.0.1"),
         ws_port=_env_int("VITISH_WS_PORT", 8765),
-        api_host=_env_str("VITISH_API_HOST", "0.0.0.0"),
+        api_host=_env_str("VITISH_API_HOST", "127.0.0.1"),
         api_port=_env_int("VITISH_API_PORT", 8000),
+        mqtt_username=_env_str("VITISH_MQTT_USER", "") or None,
+        mqtt_password=_env_str("VITISH_MQTT_PASS", "") or None,
+        demo_token=_env_str("VITISH_DEMO_TOKEN", ""),
+        demo_rate_limit=_env_int("VITISH_DEMO_RATE_LIMIT", 5),
+        demo_rate_window_s=_env_float("VITISH_DEMO_RATE_WINDOW_S", 10.0),
+        ws_allowed_origins=_env_str("VITISH_WS_ORIGINS", ""),
         db_dsn=_env_str("VITISH_DB_DSN", ""),
         accel_flag_factor=_env_float("VITISH_ACCEL_FLAG_FACTOR", 2.5),
         accel_flag_floor=_env_float("VITISH_ACCEL_FLAG_FLOOR", 0.15),

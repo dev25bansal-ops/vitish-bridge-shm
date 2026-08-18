@@ -1,22 +1,51 @@
 # VITISH 2026 · PS#99 SHM — one-command stack (replay-first demo, no venue WiFi dependency)
 #   docker compose up -d --build
 # Then: python backend/app/run_all.py     (simulator + WS + API in one process)
+#
+# SECURITY (COMPREHENSIVE-ANALYSIS §2.1, SEC-01 / SEC-04):
+#   * All published ports bind 127.0.0.1 (loopback only) — nothing is reachable
+#     from the LAN or venue WiFi.  Both services run on the same host as the
+#     backend, so loopback binding changes nothing functionally.
+#   * MQTT "secure mode" (off by default to keep the one-command flow working):
+#       VITISH_MQTT_USER=vitish VITISH_MQTT_PASS=<strong> docker compose up -d
+#     The entrypoint generates a real mosquitto password file (SHA-512) from
+#     the env vars, toggles allow_anonymous false, and applies the topic ACL.
+#     The backend (run_all.py) reads the same VITISH_MQTT_USER/PASS env vars.
+#   * Postgres credentials are overridable (VITISH_DB_USER / VITISH_DB_PASSWORD);
+#     a per-deployment generated password is the documented practice.
 
 services:
   mqtt:
     image: eclipse-mosquitto:2
     container_name: vitish-mqtt
     ports:
-      - "1883:1883"   # MQTT
-      - "9001:9001"   # MQTT over WebSocket (twin fallback)
+      - "127.0.0.1:1883:1883"   # MQTT (loopback only)
+      - "127.0.0.1:9001:9001"   # MQTT over WebSocket (twin fallback; loopback only)
+    environment:
+      VITISH_MQTT_USER: ${VITISH_MQTT_USER:-}
+      VITISH_MQTT_PASS: ${VITISH_MQTT_PASS:-}
     volumes:
       - ./docker-data/mosquitto/data:/mosquitto/data
       - ./docker-data/mosquitto/log:/mosquitto/log
       - ./docker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./docker/acl:/mosquitto/config/acl:ro
+    entrypoint: >-
+      /bin/sh -c
+      "cp /mosquitto/config/mosquitto.conf /mosquitto/data/mosquitto.conf;
+      if [ -n \"$$VITISH_MQTT_USER\" ] && [ -n \"$$VITISH_MQTT_PASS\" ];
+      then mosquitto_passwd -b /mosquitto/data/passwd \"$$VITISH_MQTT_USER\" \"$$VITISH_MQTT_PASS\";
+      echo 'password_file /mosquitto/data/passwd' >> /mosquitto/data/mosquitto.conf;
+      echo 'allow_anonymous false' >> /mosquitto/data/mosquitto.conf;
+      cp /mosquitto/config/acl /mosquitto/data/acl;
+      echo 'acl_file /mosquitto/data/acl' >> /mosquitto/data/mosquitto.conf;
+      fi;
+      exec /usr/sbin/mosquitto -c /mosquitto/data/mosquitto.conf"
     healthcheck:
       # Liveness probe (item 8, ROADMAP-NEXT): pub a retained healthcheck msg,
       # then confirm the broker echoes it back — no external tooling needed.
-      test: ["CMD-SHELL", "mosquitto_pub -h 127.0.0.1 -p 1883 -t vitish/health -m ok -r && mosquitto_sub -h 127.0.0.1 -p 1883 -t vitish/health -C 1 -W 2"]
+      # In secure mode the compose env vars are present INSIDE the container,
+      # so the probe authenticates with them (anonymous otherwise).
+      test: ["CMD-SHELL", "AUTH=''; if [ -n \"$$VITISH_MQTT_USER\" ] && [ -n \"$$VITISH_MQTT_PASS\" ]; then AUTH=\"-u \\\"$$VITISH_MQTT_USER\\\" -P \\\"$$VITISH_MQTT_PASS\\\"\"; fi; mosquitto_pub $$AUTH -h 127.0.0.1 -p 1883 -t vitish/health -m ok -r && mosquitto_sub $$AUTH -h 127.0.0.1 -p 1883 -t vitish/health -C 1 -W 2"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -26,11 +55,11 @@ services:
     image: postgres:16-alpine
     container_name: vitish-db
     environment:
-      POSTGRES_USER: vitish
-      POSTGRES_PASSWORD: vitish
+      POSTGRES_USER: ${VITISH_DB_USER:-vitish}
+      POSTGRES_PASSWORD: ${VITISH_DB_PASSWORD:-vitish}
       POSTGRES_DB: shm
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # Postgres (loopback only — SEC-04)
     volumes:
       - ./docker-data/postgres:/var/lib/postgresql/data
     healthcheck:
