@@ -56,6 +56,10 @@ docker-data/
 !docker-compose.yml
 !package.json
 !data/ltbp/analysis/*.json
+# Item 21 (fleet-prior learning loop): the DERIVED merged summary is a
+# generated artifact of scripts/ltbp_merge.py — its regeneration is the
+# committed command; never commit the merged output itself.
+data/ltbp/analysis/ltbp_summary.generated.json
 
 # Research diagnostic dumps (raw web fetches; the distilled summaries in
 # .verify/*.txt / vault are what teammates need)

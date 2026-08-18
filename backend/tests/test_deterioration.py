@@ -25,11 +25,11 @@ if str(ROOT) not in sys.path:
 import numpy as np  # noqa: E402
 
 from app.deterioration import (  # noqa: E402
-    PRIORS_LABEL,
     bridge_deterioration,
     condition_from_bhi,
     load_priors,
     next_inspection,
+    priors_label,
     project,
     transition_matrix,
 )
@@ -119,6 +119,10 @@ def test_payload() -> None:
     p = bridge_deterioration("reg-01", 74.0, years=20)
     check("priors label present", "empirical LTBP prior" in p["priors_label"],
           p["priors_label"])
+    check("priors label function == constant (no merge)",
+          priors_label() == "empirical LTBP prior, small n "
+                             "(44 FHWA InfoBridge pilot bridges, 1993-2025)",
+          priors_label())
     check("projection length = years", len(p["projection"]) == 20, str(len(p["projection"])))
     check("next-inspection rule stated",
           "first year" in p["next_inspection_rule"], p["next_inspection_rule"])

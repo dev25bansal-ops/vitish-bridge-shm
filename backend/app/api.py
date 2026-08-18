@@ -50,6 +50,7 @@ from app import bridge_registry  # noqa: E402
 from app import channel_models as cm  # noqa: E402
 from app import deterioration as det_mod  # noqa: E402
 from app import edge_node as edge_mod  # noqa: E402
+from app import fleet_learning as fleet_mod  # noqa: E402
 from app import live_feed as live_mod  # noqa: E402
 from app import stiffness as stiffness_mod  # noqa: E402
 from app.config import settings  # noqa: E402
@@ -398,13 +399,29 @@ def create_app() -> FastAPI:
             "limit": limit,
             "sorted_by": "next_inspection_year asc (most urgent first); "
                          "tie-break years_to_poor.expected",
-            "priors_label": det_mod.PRIORS_LABEL,
+            "priors_label": det_mod.priors_label(),
             "note": ("Prior-driven prioritization view — the 49 regulator "
                      "healths are seeded/illustrative, never real inspection "
                      "data.  Markov projection under an empirical LTBP fleet "
                      "prior, small n — a probabilistic band, not a certified RUL."),
             "rows": rows[:limit],
         }
+
+    @app.get("/api/ltbp/observations")
+    def ltbp_observations() -> dict:
+        """Item 21 — the fleet-prior learning loop's observed-transition store,
+        read-only.  Provenance is shown back (recorded_by on every record); the
+        store is appended ONLY by the reviewed offline record path — never by
+        telemetry (condition_from_bhi is a model assumption, not an NBI
+        inspection)."""
+        return fleet_mod.load_observed()
+
+    @app.get("/api/ltbp/merge-status")
+    def ltbp_merge_status() -> dict:
+        """Item 21 — which prior file is in use (base vs merged) + observation
+        stats.  Read-only; folding observations in is a reviewed offline action
+        (scripts/ltbp_merge.py), nothing auto-ingests."""
+        return fleet_mod.merge_status()
 
     @app.get("/api/bridge/{bridge_id}/report.pdf")
     def condition_report_pdf(bridge_id: str):

@@ -37,17 +37,42 @@ log = logging.getLogger(__name__)
 
 # --- priors data ---------------------------------------------------------------
 _SUMMARY = PROJECT_ROOT / "data" / "ltbp" / "analysis" / "ltbp_summary.json"
+# Item 21 (fleet-prior learning loop): when a merge has been run, the DERIVED
+# generated file carries the LTBP base counts PLUS observed inspections.  It is
+# a separate artifact from the committed base summary (which is never mutated);
+# the base is used verbatim when no merge exists.
+_MERGED = PROJECT_ROOT / "data" / "ltbp" / "analysis" / "ltbp_summary.generated.json"
 
-PRIORS_LABEL = "empirical LTBP prior, small n (44 FHWA InfoBridge pilot bridges, 1993-2025)"
+_BASE_PRIORS_LABEL = ("empirical LTBP prior, small n "
+                      "(44 FHWA InfoBridge pilot bridges, 1993-2025)")
+PRIORS_LABEL = _BASE_PRIORS_LABEL
 _RATINGS = ("super", "sub")
 
 _priors_cache: Optional[dict] = None
 
 
+def priors_label() -> str:
+    """The honest priors label: the merged file's own label when present (it
+    states how many observed inspections were appended), else the LTBP base
+    label.  Single source of truth for API/report consumers."""
+    from app import fleet_learning as fl
+    return fl.merged_label() if fl.merged_present() else PRIORS_LABEL
+
+
 def load_priors() -> dict:
-    """Lazy-load the LTBP summary (real FHWA InfoBridge longitudinal counts)."""
+    """Lazy-load the LTBP summary.
+
+    Prefers the generated MERGED summary (base LTBP counts + observed
+    inspections, item 21) when present; otherwise the committed base file.
+    """
     global _priors_cache
     if _priors_cache is None:
+        if _MERGED.exists():
+            try:
+                _priors_cache = json.loads(_MERGED.read_text(encoding="utf-8"))
+                return _priors_cache
+            except Exception:
+                _priors_cache = None
         if not _SUMMARY.exists():
             raise FileNotFoundError(
                 f"LTBP summary missing: {_SUMMARY} — run scripts/ltbp_analyze.py")
@@ -195,7 +220,7 @@ def bridge_deterioration(bridge_id: str, bhi: float, years: int = 30,
         "rating": rating,
         "current_bhi": round(float(bhi), 1),
         "current_condition": current,
-        "priors_label": PRIORS_LABEL,
+        "priors_label": priors_label(),
         "transition_provenance": prov,
         "years": years,
         "projection": rows,
